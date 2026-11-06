@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Song Quiz · Cover styles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Fredoka:wght@500;600;700&display=swap">
+<style>
+/* Prototype only: compares four cover styles for the category picker. Not part of the game. */
+:root {
+  --floor: #f3faff; --card: #ffffff; --edge: #cbe3f3; --edge-deep: #9ccbe9;
+  --text: #0b2540; --muted: #557590; --brand: #1fb2ff;
+  --font-marquee: "Bungee", "Arial Black", Impact, sans-serif;
+  --font-ui: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; color: var(--text); font: 500 16px/1.45 var(--font-ui);
+  background: radial-gradient(60% 40% at 8% -8%, #bfe7ff, transparent 70%), var(--floor);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: max(16px, env(safe-area-inset-top, 0px)) max(32px, env(safe-area-inset-bottom, 0px));
+}
+.stage { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
+h1 { font-family: var(--font-marquee); font-weight: 400; font-size: clamp(30px, 8vw, 44px); margin: 0; text-shadow: 3px 3px 0 var(--brand); line-height: 1.05; }
+.intro { margin: 8px 0 0; color: var(--muted); max-width: 52ch; }
+.style { display: flex; flex-direction: column; gap: 10px; }
+.style-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.letter { font-family: var(--font-marquee); font-size: 26px; color: var(--brand); }
+.style-head h2 { margin: 0; font-size: 22px; font-weight: 700; }
+.style-head p { margin: 0; color: var(--muted); font-size: 15px; flex-basis: 100%; }
+
+.carousel {
+  display: grid; grid-auto-flow: column; grid-auto-columns: clamp(150px, 40vw, 180px); gap: 12px;
+  overflow-x: auto; scroll-snap-type: x mandatory; padding: 6px 2px 14px; scrollbar-width: thin;
+}
+.cover {
+  --c1: #1fb2ff; --c2: #0b2540;
+  position: relative; aspect-ratio: 1; border-radius: 18px; overflow: hidden; scroll-snap-align: start;
+  background: linear-gradient(150deg, var(--c1), color-mix(in srgb, var(--c2) 80%, #000));
+  box-shadow: 0 5px 0 color-mix(in srgb, var(--c2) 55%, #000); color: #fff; max-width: 100%;
+}
+.cover .art { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .5s; }
+.cover .art.on { opacity: 1; }
+.cover .mosaic { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr 1fr; opacity: 0; transition: opacity .5s; }
+.cover .mosaic.on { opacity: 1; }
+.cover .mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cover .scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.35) 0%, transparent 32%, transparent 45%, rgba(0,0,0,.72) 100%); }
+.cover.photo .scrim { background: linear-gradient(180deg, rgba(0,0,0,.25) 0%, transparent 30%, color-mix(in srgb, var(--c1) 35%, transparent) 55%, color-mix(in srgb, var(--c1) 85%, #000) 100%); }
+.cover .tag {
+  position: absolute; top: 10px; left: 10px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
+}
+.cover .title {
+  position: absolute; left: 12px; right: 12px; bottom: 11px; font-family: var(--font-marquee); font-size: 21px; line-height: 1.05;
+  text-shadow: 0 2px 0 rgba(0,0,0,.45); text-wrap: balance;
+}
+.cover .credit { position: absolute; right: 8px; top: 10px; font-size: 10px; font-weight: 600; opacity: .8; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.cover .loading { position: absolute; inset: 0; background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,.18) 50%, transparent 70%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .cover .loading { animation: none; } }
+.status { color: var(--muted); font-size: 14px; margin: 0; }
+.back { display: inline-block; margin-top: 4px; color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<main class="stage">
+  <header>
+    <h1>Cover styles</h1>
+    <p class="intro">Same eight categories, four ways. Swipe each row (or scroll sideways) and pick your favorite style, or mix them, like one style per row.</p>
+    <a class="back" href="./">← Back to Song Quiz</a>
+  </header>
+
+  <section class="style" id="style-a">
+    <div class="style-head"><span class="letter">A</span><h2>Album mosaic</h2><p>Four real album covers from the songs in that category.</p></div>
+    <div class="carousel"></div>
+  </section>
+
+  <section class="style" id="style-b">
+    <div class="style-head"><span class="letter">B</span><h2>Artist photo</h2><p>A big photo of the artist who shows up most in that category.</p></div>
+    <div class="carousel"></div>
+  </section>
+
+  <section class="style" id="style-c">
+    <div class="style-head"><span class="letter">C</span><h2>Deezer playlist cover</h2><p>The cover art of the playlist the songs come from.</p></div>
+    <div class="carousel"></div>
+  </section>
+
+  <section class="style" id="style-d">
+    <div class="style-head"><span class="letter">D</span><h2>Theme photo</h2><p>A free stock photo that fits the theme, tinted with the category's color.</p></div>
+    <div class="carousel"></div>
+  </section>
+
+  <p class="status" id="status">Loading covers from Deezer…</p>
+</main>
+
+<script>
+"use strict";
+
+const CATEGORIES = [
+  { id: "top",          tag: "Live chart", title: "Today's Top Hits", chart: 0,   colors: ["#00b4ff", "#ff2e88"], photo: "ubwn8GI9-2o" },
+  { id: "now-hiphop",   tag: "Live chart", title: "Today's Hip-Hop",  chart: 116, colors: ["#e08a00", "#ff5a1f"], photo: "X4e8n5ncOEs" },
+  { id: "2010s",        tag: "Decade",     title: "2010s",            query: "2010s hits", colors: ["#3d6bff", "#00b4ff"], photo: "PDX_a_82obo" },
+  { id: "90s",          tag: "Decade",     title: "90s",              query: "90s hits",   colors: ["#00a3ad", "#ff5a1f"], photo: "1VMFqrFUYvE" },
+  { id: "80s",          tag: "Decade",     title: "80s",              query: "80s hits",   colors: ["#ff2e88", "#ff8a00"], photo: "Kj4o6jCPulI" },
+  { id: "70s-disco",    tag: "Genre",      title: "70s Disco",        query: "70s disco hits", colors: ["#ff8a00", "#d4a000"], photo: "8x0ehBGa03Q" },
+  { id: "90s-rock",     tag: "Genre",      title: "90s Rock",         query: "90s rock hits",  colors: ["#e2231a", "#00a3ad"], photo: "iGfIBqufNns" },
+  { id: "2000s-hiphop", tag: "Genre",      title: "2000s Hip-Hop",    query: "2000s hip hop hits", colors: ["#14a865", "#e08a00"], photo: "zlOh39q3gS4" },
+];
+
+let callCount = 0;
+function jsonp(path, params) {
+  return new Promise((resolve, reject) => {
+    const name = "__dz" + Date.now() + "_" + (++callCount);
+    const script = document.createElement("script");
+    const timer = setTimeout(() => finish(new Error("timeout")), 12000);
+    function finish(err, data) {
+      clearTimeout(timer);
+      window[name] = () => {};
+      script.remove();
+      if (err) reject(err); else resolve(data);
+    }
+    window[name] = data => (data && data.error ? finish(new Error(data.error.message)) : finish(null, data));
+    script.onerror = () => finish(new Error("network"));
+    script.src = `https://api.deezer.com${path}?${new URLSearchParams({ ...params, output: "jsonp", callback: name })}`;
+    document.head.appendChild(script);
+  });
+}
+
+// What each category needs for the covers: tracks (for albums and artists) and a playlist picture.
+async function loadCategory(c) {
+  if (c.chart !== undefined) {
+    const chart = await jsonp(`/chart/${c.chart}`, {});
+    const playlist = (chart.playlists && chart.playlists.data || [])[0];
+    return { tracks: chart.tracks ? chart.tracks.data : [], playlistCover: playlist ? playlist.picture_xl : "" };
+  }
+  const found = await jsonp("/search/playlist", { q: c.query, limit: 15 });
+  const list = (found.data || []).find(p => (p.nb_tracks || 0) >= 30);
+  if (!list) return { tracks: [], playlistCover: "" };
+  const tracks = await jsonp(`/playlist/${list.id}/tracks`, { limit: 60 });
+  return { tracks: tracks.data || [], playlistCover: list.picture_xl || "" };
+}
+
+function albumCovers(tracks) {
+  const seen = new Set(), out = [];
+  for (const t of tracks) {
+    const url = t.album && (t.album.cover_big || t.album.cover_medium);
+    if (url && !seen.has(t.album.id)) { seen.add(t.album.id); out.push(url); }
+    if (out.length === 4) break;
+  }
+  return out;
+}
+
+function topArtist(tracks) {
+  const count = new Map();
+  for (const t of tracks) if (t.artist) count.set(t.artist.id, (count.get(t.artist.id) || 0) + 1);
+  let best = null, n = 0;
+  for (const [id, c] of count) if (c > n) { best = id; n = c; }
+  if (!best) return "";
+  const t = tracks.find(x => x.artist && x.artist.id === best);
+  return t.artist.picture_xl || `https://api.deezer.com/artist/${best}/image?size=xl`;
+}
+
+function shell(c, extraClass = "") {
+  const el = document.createElement("div");
+  el.className = `cover ${extraClass}`;
+  el.style.setProperty("--c1", c.colors[0]);
+  el.style.setProperty("--c2", c.colors[1]);
+  el.innerHTML = `<div class="loading"></div><div class="scrim"></div><span class="tag">${c.tag}</span><span class="title">${c.title}</span>`;
+  return el;
+}
+
+function showImage(el, url, before = ".scrim") {
+  if (!url) return done(el);
+  const img = new Image();
+  img.className = "art";
+  img.alt = "";
+  img.onload = () => { img.classList.add("on"); done(el); };
+  img.onerror = () => { img.remove(); done(el); };
+  img.src = url;
+  el.insertBefore(img, el.querySelector(before));
+}
+const done = el => { const l = el.querySelector(".loading"); if (l) l.remove(); };
+
+const rows = { a: [], b: [], c: [], d: [] };
+for (const c of CATEGORIES) {
+  for (const key of ["a", "b", "c"]) {
+    const el = shell(c);
+    document.querySelector(`#style-${key} .carousel`).appendChild(el);
+    rows[key].push(el);
+  }
+  const photo = shell(c, "photo");
+  photo.insertAdjacentHTML("beforeend", `<span class="credit">Unsplash</span>`);
+  photo.querySelector(".tag").hidden = true;
+  document.querySelector("#style-d .carousel").appendChild(photo);
+  showImage(photo, `https://unsplash.com/photos/${c.photo}/download?w=600`);
+}
+
+(async () => {
+  let failed = 0;
+  const queue = CATEGORIES.map((c, i) => ({ c, i }));
+  async function worker() {
+    while (queue.length) {
+      const { c, i } = queue.shift();
+      try {
+        const data = await loadCategory(c);
+        const covers = albumCovers(data.tracks);
+        const mosaicEl = rows.a[i];
+        if (covers.length === 4) {
+          const m = document.createElement("div");
+          m.className = "mosaic";
+          let loaded = 0;
+          m.innerHTML = covers.map(u => `<img src="${u}" alt="">`).join("");
+          m.querySelectorAll("img").forEach(img => img.onload = img.onerror = () => { if (++loaded === 4) { m.classList.add("on"); done(mosaicEl); } });
+          mosaicEl.insertBefore(m, mosaicEl.querySelector(".scrim"));
+        } else done(mosaicEl);
+        showImage(rows.b[i], topArtist(data.tracks));
+        showImage(rows.c[i], data.playlistCover);
+      } catch (_) {
+        failed++;
+        [rows.a[i], rows.b[i], rows.c[i]].forEach(done);
+      }
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  document.getElementById("status").textContent = failed
+    ? `${failed} categor${failed === 1 ? "y" : "ies"} couldn't load from Deezer and show a plain color instead.`
+    : "All covers loaded.";
+})();
+</script>
+</body>
+</html>
