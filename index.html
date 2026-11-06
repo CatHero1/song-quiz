@@ -149,6 +149,9 @@
 .artist[aria-pressed="true"] .artist-pic { transform: translateY(-3px); box-shadow: 0 0 0 3px var(--floor), 0 0 0 6px var(--text); }
 .artist-name { font-weight: 600; font-size: 14px; text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.sp-foot { margin: 0; color: var(--muted); font-size: 14px; }
+.link-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text); text-decoration: underline; }
+
 /* Dark themes */
 :root[data-look="neon"], :root[data-look="vinyl"], :root[data-look="lagoon"] {
   --gold-bg: #2e2508; --gold-edge: #ffbf00; --gold-deep: #6b5000; --gold-text: #ffcf40;
@@ -520,7 +523,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v4";
+const APP_VERSION = "v5";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -530,7 +533,9 @@ const APP_VERSION = "v4";
      rows, categories                -> what players can pick
      peek(categoryId)                -> Promise<{ covers: string[], artists: string[] }> (card art)
      topArtists(), searchArtists(q)  -> Promise<Artist[]>   Artist: { id, name, picture }
-     getPool({ type: "category" | "artist", id }) -> Promise<Song[]>
+     getPool(choice, { need, onProgress }) -> Promise<Song[]>
+       choice: { type: "category" | "artist" | "playlist", id } or { type: "liked" }
+     spotify: login and the player's own library (see below)
      Song: { id, title, artist, preview, cover }
    ============================================================ */
 const SongSource = (() => {
@@ -661,7 +666,136 @@ const SongSource = (() => {
     return (res.data || []).map(toArtist);
   }
 
-  async function getPool(choice) {
+  /* ---- Spotify: login (PKCE, no secret needed) and the player's own music ---- */
+  const spotify = (() => {
+    const CLIENT_ID = "7972270efb574ccba3e31915e981ee0d";
+    const REDIRECT = "https://cathero1.github.io/song-quiz/";  // must match the app's Spotify dashboard
+    const SCOPES = "user-library-read playlist-read-private playlist-read-collaborative";
+    const KEY = "ntt-spotify";
+    const available = location.origin === "https://cathero1.github.io";
+    const read = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (_) { return null; } };
+    const write = (k, v) => { try { v ? localStorage.setItem(k, JSON.stringify(v)) : localStorage.removeItem(k); } catch (_) {} };
+    const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    let me = null;
+
+    async function connect() {
+      const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
+      const state = b64url(crypto.getRandomValues(new Uint8Array(12)));
+      const challenge = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier)));
+      write(KEY + "-pkce", { verifier, state });
+      location.href = "https://accounts.spotify.com/authorize?" + new URLSearchParams({
+        response_type: "code", client_id: CLIENT_ID, scope: SCOPES, redirect_uri: REDIRECT,
+        code_challenge_method: "S256", code_challenge: challenge, state,
+      });
+    }
+
+    async function token(body) {
+      const res = await fetch("https://accounts.spotify.com/api/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: CLIENT_ID, ...body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.access_token) throw new Error("Spotify login didn't go through. Try connecting again.");
+      const prev = read(KEY);
+      write(KEY, { access: data.access_token, refresh: data.refresh_token || (prev && prev.refresh), expires: Date.now() + (data.expires_in - 60) * 1000 });
+    }
+
+    // Runs once on page load. Returns null (no login in progress), "ok", or a message to show.
+    async function finishLogin() {
+      const params = new URLSearchParams(location.search);
+      if (!params.has("code") && !params.has("error")) return null;
+      history.replaceState(null, "", location.pathname);
+      const saved = read(KEY + "-pkce");
+      write(KEY + "-pkce", null);
+      if (params.has("error")) return "Spotify login was cancelled.";
+      if (!saved || saved.state !== params.get("state")) return "Spotify login didn't match up. Try connecting again.";
+      try {
+        await token({ grant_type: "authorization_code", code: params.get("code"), redirect_uri: REDIRECT, code_verifier: saved.verifier });
+        return "ok";
+      } catch (err) { return err.message; }
+    }
+
+    async function refresh() {
+      const t = read(KEY);
+      try { await token({ grant_type: "refresh_token", refresh_token: t && t.refresh }); }
+      catch (_) { disconnect(); throw new Error("Your Spotify login expired. Connect again."); }
+    }
+
+    async function api(path, retried = false) {
+      if (!read(KEY)) throw new Error("Connect Spotify first.");
+      if (Date.now() > read(KEY).expires) await refresh();
+      const res = await fetch("https://api.spotify.com/v1" + path, { headers: { Authorization: `Bearer ${read(KEY).access}` } });
+      if (res.status === 401 && !retried) { await refresh(); return api(path, true); }
+      if (res.status === 403) throw new Error("This Spotify account isn't on the app's list yet. Add it under User Management in the Spotify developer dashboard.");
+      if (res.status === 429) throw new Error("Spotify is busy right now. Wait a minute and try again.");
+      if (!res.ok) throw new Error("Spotify didn't answer. Try again.");
+      return res.json();
+    }
+
+    function profile() {
+      if (!me) {
+        me = api("/me").then(u => ({ id: u.id, name: u.display_name || u.id }));
+        me.catch(() => { me = null; });
+      }
+      return me;
+    }
+
+    // Spotify only shares the songs of playlists you made or collaborate on.
+    async function playlists() {
+      const user = await profile();
+      const res = await api("/me/playlists?limit=50");
+      return (res.items || [])
+        .filter(p => p && (p.collaborative || (p.owner && p.owner.id === user.id)))
+        .map(p => ({ id: p.id, name: p.name, picture: p.images && p.images[0] ? p.images[0].url : "", total: (p.items || p.tracks || {}).total || 0 }))
+        .filter(p => p.total > 0);
+    }
+
+    async function tracks(choice) {
+      const out = [];
+      for (let offset = 0; offset < 200; offset += 50) {
+        const res = choice.type === "liked"
+          ? await api(`/me/tracks?limit=50&offset=${offset}`)
+          : await api(`/playlists/${encodeURIComponent(choice.id)}/items?limit=50&offset=${offset}`);
+        for (const row of res.items || []) {
+          const t = row.item || row.track;
+          if (t && t.type === "track" && t.name && t.artists && t.artists[0]) out.push({ title: t.name, artist: t.artists[0].name });
+        }
+        if (!res.next) break;
+      }
+      return out;
+    }
+
+    function disconnect() { write(KEY, null); me = null; }
+
+    return { available, connected: () => Boolean(read(KEY)), connect, finishLogin, disconnect, profile, playlists, tracks };
+  })();
+
+  // Spotify gives song names; the playable clips come from Deezer.
+  const plainTitle = s => s.replace(/\s[-–]\s.*$/, "").replace(/\s*[([].*?[)\]]/g, "").trim();
+  const sameName = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x.includes(y) || y.includes(x); };
+  async function matchOnDeezer(t) {
+    const res = await jsonp("/search", { q: `artist:"${t.artist}" track:"${plainTitle(t.title)}"`, limit: 5 });
+    const hit = (res.data || []).find(d => d.preview && d.artist && sameName(d.artist.name, t.artist));
+    return hit ? normalize(hit) : null;
+  }
+  async function spotifyPool(choice, need, onProgress) {
+    const list = shuffle(await spotify.tracks(choice));
+    if (!list.length) throw new Error("No songs to play there. Spotify only shares playlists you made or collaborate on.");
+    const found = new Map();
+    let next = 0;
+    const worker = async () => {
+      while (found.size < need && next < list.length) {
+        const song = await matchOnDeezer(list[next++]).catch(() => null);
+        if (song && found.size < need) { found.set(song.id, song); if (onProgress) onProgress(found.size, need); }
+      }
+    };
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    return dedupe([...found.values()]);
+  }
+
+  async function getPool(choice, { need = 0, onProgress } = {}) {
+    if (choice.type === "liked" || choice.type === "playlist") return spotifyPool(choice, need, onProgress);
     if (choice.type === "artist") {
       const res = await jsonp(`/artist/${choice.id}/top`, { limit: 100 });
       return dedupe((res.data || []).map(normalize));
@@ -670,7 +804,7 @@ const SongSource = (() => {
     return categorySongs(cat);
   }
 
-  return { rows, categories, peek, topArtists, searchArtists, getPool };
+  return { rows, categories, peek, topArtists, searchArtists, getPool, spotify };
 })();
 
 /* ============================================================
@@ -906,6 +1040,8 @@ const ICONS = {
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   cross: '<path d="M6 6l12 12M18 6L6 18"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  library: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>',
   artist: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   left: '<path d="M15 6l-6 6 6 6"/>',
@@ -1107,7 +1243,9 @@ try {
 delete settings.era;   // older versions picked era + genre separately
 delete settings.genre;
 const validChoice = c => c && ((c.type === "category" && SongSource.categories.some(x => x.id === c.id)) ||
-  (c.type === "artist" && c.id && c.name));
+  (c.type === "artist" && c.id && c.name) ||
+  (c.type === "liked" && SongSource.spotify.connected()) ||
+  (c.type === "playlist" && c.id && c.name && SongSource.spotify.connected()));
 if (!validChoice(settings.choice)) settings.choice = { type: "category", id: "top" };
 if (!THEMES.some(t => t.id === settings.look)) settings.look = "sky";
 
@@ -1201,6 +1339,8 @@ function renderSetup(errorText = "") {
   const choice = (group, id, label, current) =>
     `<button class="tile" data-${group}="${id}" aria-pressed="${id === current}"><span>${esc(label)}</span></button>`;
   const artistPicked = settings.choice.type === "artist";
+  const spotifyOpen = openSpotifyNext || settings.choice.type === "liked" || settings.choice.type === "playlist";
+  openSpotifyNext = false;
 
   app.innerHTML = `
     ${topbar("", true)}
@@ -1223,6 +1363,15 @@ function renderSetup(errorText = "") {
           ${SongSource.categories.filter(c => c.row === row.id).map(categoryCard).join("")}
         </div>
       </section>`).join("")}
+
+    <section class="block">
+      <button class="fold" id="spotify-toggle" aria-expanded="${spotifyOpen}" aria-controls="spotify-panel">
+        ${icon("library")}
+        <span class="fold-text"><b>Your Spotify</b><span id="spotify-summary">${spotifySummary()}</span></span>
+        <span class="chev">${icon("down")}</span>
+      </button>
+      <div class="fold-panel" id="spotify-panel" ${spotifyOpen ? "" : "hidden"}></div>
+    </section>
 
     <section class="block">
       <button class="fold" id="artists-toggle" aria-expanded="${artistPicked}" aria-controls="artists-panel">
@@ -1253,6 +1402,7 @@ function renderSetup(errorText = "") {
   wireTopbar();
   wireCategories();
   wireArtists(artistPicked);
+  wireSpotify(spotifyOpen);
 
   app.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => {
     settings.clip = Number(b.dataset.clip);
@@ -1294,8 +1444,79 @@ function selectChoice(next) {
     b.setAttribute("aria-pressed", String(next.type === "category" && b.dataset.cat === next.id)));
   app.querySelectorAll("[data-artist]").forEach(b =>
     b.setAttribute("aria-pressed", String(next.type === "artist" && b.dataset.artist === next.id)));
+  app.querySelectorAll("[data-sp]").forEach(b =>
+    b.setAttribute("aria-pressed", String((next.type === "liked" && b.dataset.sp === "liked") || (next.type === "playlist" && b.dataset.sp === next.id))));
   const summary = document.getElementById("artist-summary");
   if (summary) summary.textContent = next.type === "artist" ? `Playing ${next.name}` : "Guess the songs of one artist";
+  const spSummary = document.getElementById("spotify-summary");
+  if (spSummary) spSummary.textContent = spotifySummary();
+}
+
+/* ---------- Your Spotify ---------- */
+let openSpotifyNext = false;
+
+function spotifySummary() {
+  const c = settings.choice;
+  if (c.type === "liked") return "Playing your Liked Songs";
+  if (c.type === "playlist") return `Playing ${c.name}`;
+  return SongSource.spotify.connected() ? "Your Liked Songs and playlists" : "Play songs from your own library";
+}
+
+function wireSpotify(startOpen) {
+  const sp = SongSource.spotify;
+  const toggle = document.getElementById("spotify-toggle");
+  const panel = document.getElementById("spotify-panel");
+  let filled = false;
+
+  function showConnect() {
+    panel.innerHTML = sp.available ? `
+      <p class="hint">Log in with Spotify to play your Liked Songs or your own playlists. Works for accounts added to the app in the Spotify developer dashboard.</p>
+      <button class="ghost-btn" id="sp-connect">${icon("library")} Connect Spotify</button>` : `
+      <p class="hint">Spotify connects on the website version of Song Quiz, at cathero1.github.io/song-quiz.</p>`;
+    const btn = document.getElementById("sp-connect");
+    if (btn) btn.onclick = () => { btn.disabled = true; sp.connect(); };
+  }
+
+  async function showLibrary() {
+    panel.innerHTML = `<p class="hint">Loading your playlists…</p>`;
+    try {
+      const [me, lists] = await Promise.all([sp.profile(), sp.playlists()]);
+      const card = (id, name, sub, art) => `
+        <button class="cat" data-sp="${esc(id)}" aria-pressed="false" aria-label="${esc(name)}">
+          <span class="cat-art" style="--c1:#ff2e88;--c2:#3d6bff">${art}<span class="tick">${icon("check")}</span></span>
+          <span class="cat-name">${esc(name)}</span>
+          <span class="cat-sub">${esc(sub)}</span>
+        </button>`;
+      panel.innerHTML = `
+        <div class="carousel">
+          ${card("liked", "Liked Songs", "Songs you've liked", `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.heart}</svg><span class="cat-label">Liked</span>`)}
+          ${lists.map(p => card(p.id, p.name, `${p.total} songs`, p.picture ? `<img class="cat-img on" src="${esc(p.picture)}" alt="">` : `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.library}</svg>`)).join("")}
+        </div>
+        <p class="sp-foot">Connected as ${esc(me.name)} · <button class="link-btn" id="sp-out">Disconnect</button></p>`;
+      panel.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => {
+        if (b.dataset.sp === "liked") selectChoice({ type: "liked", name: "your Liked Songs" });
+        else { const p = lists.find(x => x.id === b.dataset.sp); selectChoice({ type: "playlist", id: p.id, name: p.name }); }
+      });
+      selectChoice(settings.choice);
+      document.getElementById("sp-out").onclick = () => {
+        sp.disconnect();
+        if (["liked", "playlist"].includes(settings.choice.type)) selectChoice({ type: "category", id: "top" });
+        document.getElementById("spotify-summary").textContent = spotifySummary();
+        showConnect();
+      };
+    } catch (err) {
+      panel.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      if (!sp.connected()) showConnect();
+    }
+  }
+
+  const open = isOpen => {
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    panel.hidden = !isOpen;
+    if (isOpen && !filled) { filled = true; sp.connected() ? showLibrary() : showConnect(); }
+  };
+  toggle.onclick = () => open(panel.hidden);
+  if (startOpen) open(true);
 }
 
 function wireCategories() {
@@ -1441,16 +1662,20 @@ async function startGame() {
   primeAudio();
   applyAccent();
   const choice = settings.choice;
-  const what = choice.type === "artist" ? choice.name : SongSource.categories.find(c => c.id === choice.id).label;
+  const what = choice.type === "category" ? SongSource.categories.find(c => c.id === choice.id).label : choice.name;
+  const need = settings.players.length * Rules.rounds;
   app.innerHTML = `
     <div class="loading">
       <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-      <p class="hint">Pulling songs for ${esc(what)}…</p>
+      <p class="hint" id="load-msg">Pulling songs for ${esc(what)}…</p>
     </div>`;
 
   let pool;
   try {
-    pool = await SongSource.getPool(choice);
+    pool = await SongSource.getPool(choice, {
+      need: Math.max(need, Rules.minPool),
+      onProgress: (n, total) => { const m = document.getElementById("load-msg"); if (m) m.textContent = `Finding your songs… ${n} of ${total}`; },
+    });
   } catch (err) {
     renderSetup(err.message);
     return;
@@ -1829,7 +2054,11 @@ function openStats(selected) {
 }
 statsDialog.addEventListener("click", e => { if (e.target === statsDialog) statsDialog.close(); });
 
-renderSetup();
+// Finish a Spotify login if Spotify just sent us back here, then show the setup screen.
+SongSource.spotify.finishLogin().then(result => {
+  if (result === "ok") openSpotifyNext = true;
+  renderSetup(result && result !== "ok" ? result : "");
+});
 </script>
 </body>
 </html>
