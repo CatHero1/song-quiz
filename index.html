@@ -523,7 +523,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v5";
+const APP_VERSION = "v6";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -534,8 +534,9 @@ const APP_VERSION = "v5";
      peek(categoryId)                -> Promise<{ covers: string[], artists: string[] }> (card art)
      topArtists(), searchArtists(q)  -> Promise<Artist[]>   Artist: { id, name, picture }
      getPool(choice, { need, onProgress }) -> Promise<Song[]>
-       choice: { type: "category" | "artist" | "playlist", id } or { type: "liked" }
-     spotify: login and the player's own library (see below)
+       choice: { type: "category" | "artist", id } or { type: "library", service: "spotify" | "youtube", id: "liked" | playlistId }
+     libraries.spotify / libraries.youtube: login and the player's own music, same shape:
+       { available, connected(), prepare?(), connect(), disconnect(), profile(), playlists(), tracks(id) }
      Song: { id, title, artist, preview, cover }
    ============================================================ */
 const SongSource = (() => {
@@ -751,12 +752,12 @@ const SongSource = (() => {
         .filter(p => p.total > 0);
     }
 
-    async function tracks(choice) {
+    async function tracks(id) {
       const out = [];
       for (let offset = 0; offset < 200; offset += 50) {
-        const res = choice.type === "liked"
+        const res = id === "liked"
           ? await api(`/me/tracks?limit=50&offset=${offset}`)
-          : await api(`/playlists/${encodeURIComponent(choice.id)}/items?limit=50&offset=${offset}`);
+          : await api(`/playlists/${encodeURIComponent(id)}/items?limit=50&offset=${offset}`);
         for (const row of res.items || []) {
           const t = row.item || row.track;
           if (t && t.type === "track" && t.name && t.artists && t.artists[0]) out.push({ title: t.name, artist: t.artists[0].name });
@@ -771,17 +772,132 @@ const SongSource = (() => {
     return { available, connected: () => Boolean(read(KEY)), connect, finishLogin, disconnect, profile, playlists, tracks };
   })();
 
-  // Spotify gives song names; the playable clips come from Deezer.
+  /* ---- YouTube Music: Google login (short-lived token, no secret) and the player's playlists and likes ---- */
+  const youtube = (() => {
+    const CLIENT_ID = "531879754244-98c8l8hqj7c89qcnph8ukr1pd4gncsqs.apps.googleusercontent.com";
+    const SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
+    const KEY = "ntt-youtube";
+    const available = location.origin === "https://cathero1.github.io";  // the client's allowed origin
+    const read = () => {
+      try { const t = JSON.parse(localStorage.getItem(KEY) || "null"); return t && t.expires > Date.now() ? t : null; }
+      catch (_) { return null; }
+    };
+    const write = v => { try { v ? localStorage.setItem(KEY, JSON.stringify(v)) : localStorage.removeItem(KEY); } catch (_) {} };
+    let gis = null, me = null;
+
+    // Google's login library; loaded when the section opens so the popup can open straight from the tap.
+    function prepare() {
+      if (!gis) {
+        gis = new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = "https://accounts.google.com/gsi/client";
+          s.onload = resolve;
+          s.onerror = () => { gis = null; reject(new Error("Couldn't reach Google. Check your connection.")); };
+          document.head.appendChild(s);
+        });
+      }
+      return gis;
+    }
+
+    function connect() {
+      return new Promise((resolve, reject) => {
+        if (!window.google || !google.accounts || !google.accounts.oauth2) return reject(new Error("Google login is still loading. Try again in a second."));
+        google.accounts.oauth2.initTokenClient({
+          client_id: CLIENT_ID,
+          scope: SCOPE,
+          callback: res => {
+            if (res.error || !res.access_token) return reject(new Error("Google login didn't go through. Make sure this account is added as a test user."));
+            write({ access: res.access_token, expires: Date.now() + (Number(res.expires_in) - 60) * 1000 });
+            resolve();
+          },
+          error_callback: err => reject(new Error(err && err.type === "popup_closed"
+            ? "The Google login window was closed before finishing."
+            : "Google login didn't open. If your browser blocks popups, allow them for this site.")),
+        }).requestAccessToken();
+      });
+    }
+
+    async function api(path) {
+      const t = read();
+      if (!t) throw new Error("Your YouTube Music login timed out. Connect again.");
+      const res = await fetch("https://www.googleapis.com/youtube/v3" + path, { headers: { Authorization: `Bearer ${t.access}` } });
+      if (res.status === 401) { write(null); me = null; throw new Error("Your YouTube Music login timed out. Connect again."); }
+      if (res.status === 403) throw new Error("Google blocked this request. Make sure this account is a test user in the Google Cloud project.");
+      if (!res.ok) throw new Error("YouTube didn't answer. Try again.");
+      return res.json();
+    }
+
+    function profile() {
+      if (!me) {
+        me = api("/channels?part=snippet&mine=true").then(r => ({ name: r.items && r.items[0] ? r.items[0].snippet.title : "your Google account" }));
+        me.catch(() => { me = null; });
+      }
+      return me;
+    }
+
+    async function playlists() {
+      const res = await api("/playlists?part=snippet,contentDetails&mine=true&maxResults=50");
+      return (res.items || []).map(p => {
+        const th = p.snippet.thumbnails || {};
+        return { id: p.id, name: p.snippet.title, picture: (th.high || th.medium || th.default || {}).url || "", total: p.contentDetails ? p.contentDetails.itemCount : 0 };
+      }).filter(p => p.total > 0);
+    }
+
+    // Video titles are messy. Songs added in YouTube Music come from "Artist - Topic" channels with clean names;
+    // otherwise "Artist - Song (Official Video)" is the usual pattern.
+    function songFrom(title, channel) {
+      const tidy = s => s.replace(/\s*[([][^)\]]*\b(official|lyrics?|audio|video|visuali[sz]er|hd|4k|remaster(ed)?)\b[^)\]]*[)\]]/gi, "").replace(/\s*\|.*$/, "").trim();
+      channel = (channel || "").trim();
+      if (/ - Topic$/.test(channel)) return { title: tidy(title), artist: channel.replace(/ - Topic$/, "") };
+      const parts = title.split(/\s+[-–—]\s+/);
+      if (parts.length >= 2) return { artist: parts[0].trim(), title: tidy(parts.slice(1).join(" - ")) };
+      return { title: tidy(title), artist: channel.replace(/\s*(VEVO|Official)$/i, "").trim() };
+    }
+
+    async function tracks(id) {
+      const out = [];
+      let page = "";
+      for (let i = 0; i < 4; i++) {
+        const more = page ? `&pageToken=${encodeURIComponent(page)}` : "";
+        const res = id === "liked"
+          ? await api(`/videos?part=snippet&myRating=like&maxResults=50${more}`)
+          : await api(`/playlistItems?part=snippet&maxResults=50&playlistId=${encodeURIComponent(id)}${more}`);
+        for (const v of res.items || []) {
+          const sn = v.snippet;
+          if (!sn || !sn.title || /^(deleted|private) video$/i.test(sn.title)) continue;
+          const song = songFrom(sn.title, sn.videoOwnerChannelTitle || sn.channelTitle);
+          if (song.title && song.artist) out.push(song);
+        }
+        page = res.nextPageToken;
+        if (!page) break;
+      }
+      return out;
+    }
+
+    function disconnect() {
+      const t = read();
+      write(null);
+      me = null;
+      if (t && window.google && google.accounts && google.accounts.oauth2) google.accounts.oauth2.revoke(t.access, () => {});
+    }
+
+    return { available, connected: () => Boolean(read()), prepare, connect, disconnect, profile, playlists, tracks };
+  })();
+  const libraries = { spotify, youtube };
+
+  // Libraries give song names; the playable clips come from Deezer.
   const plainTitle = s => s.replace(/\s[-–]\s.*$/, "").replace(/\s*[([].*?[)\]]/g, "").trim();
   const sameName = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x.includes(y) || y.includes(x); };
   async function matchOnDeezer(t) {
-    const res = await jsonp("/search", { q: `artist:"${t.artist}" track:"${plainTitle(t.title)}"`, limit: 5 });
-    const hit = (res.data || []).find(d => d.preview && d.artist && sameName(d.artist.name, t.artist));
+    const pick = res => (res.data || []).find(d => d.preview && d.artist && sameName(d.artist.name, t.artist));
+    const title = plainTitle(t.title);
+    const hit = pick(await jsonp("/search", { q: `artist:"${t.artist}" track:"${title}"`, limit: 5 }))
+      || pick(await jsonp("/search", { q: `${t.artist} ${title}`, limit: 5 }));
     return hit ? normalize(hit) : null;
   }
-  async function spotifyPool(choice, need, onProgress) {
-    const list = shuffle(await spotify.tracks(choice));
-    if (!list.length) throw new Error("No songs to play there. Spotify only shares playlists you made or collaborate on.");
+  async function libraryPool(service, id, need, onProgress) {
+    const list = shuffle(await service.tracks(id));
+    if (!list.length) throw new Error("No songs to play there. Pick another playlist.");
     const found = new Map();
     let next = 0;
     const worker = async () => {
@@ -795,7 +911,7 @@ const SongSource = (() => {
   }
 
   async function getPool(choice, { need = 0, onProgress } = {}) {
-    if (choice.type === "liked" || choice.type === "playlist") return spotifyPool(choice, need, onProgress);
+    if (choice.type === "library") return libraryPool(libraries[choice.service], choice.id, need, onProgress);
     if (choice.type === "artist") {
       const res = await jsonp(`/artist/${choice.id}/top`, { limit: 100 });
       return dedupe((res.data || []).map(normalize));
@@ -804,7 +920,7 @@ const SongSource = (() => {
     return categorySongs(cat);
   }
 
-  return { rows, categories, peek, topArtists, searchArtists, getPool, spotify };
+  return { rows, categories, peek, topArtists, searchArtists, getPool, libraries };
 })();
 
 /* ============================================================
@@ -1244,8 +1360,10 @@ delete settings.era;   // older versions picked era + genre separately
 delete settings.genre;
 const validChoice = c => c && ((c.type === "category" && SongSource.categories.some(x => x.id === c.id)) ||
   (c.type === "artist" && c.id && c.name) ||
-  (c.type === "liked" && SongSource.spotify.connected()) ||
-  (c.type === "playlist" && c.id && c.name && SongSource.spotify.connected()));
+  (c.type === "library" && SongSource.libraries[c.service] && SongSource.libraries[c.service].connected() && c.id && c.name));
+if (settings.choice && (settings.choice.type === "liked" || settings.choice.type === "playlist")) {  // v5 Spotify picks
+  settings.choice = { type: "library", service: "spotify", id: settings.choice.type === "liked" ? "liked" : settings.choice.id, name: settings.choice.name };
+}
 if (!validChoice(settings.choice)) settings.choice = { type: "category", id: "top" };
 if (!THEMES.some(t => t.id === settings.look)) settings.look = "sky";
 
@@ -1339,8 +1457,6 @@ function renderSetup(errorText = "") {
   const choice = (group, id, label, current) =>
     `<button class="tile" data-${group}="${id}" aria-pressed="${id === current}"><span>${esc(label)}</span></button>`;
   const artistPicked = settings.choice.type === "artist";
-  const spotifyOpen = openSpotifyNext || settings.choice.type === "liked" || settings.choice.type === "playlist";
-  openSpotifyNext = false;
 
   app.innerHTML = `
     ${topbar("", true)}
@@ -1364,14 +1480,7 @@ function renderSetup(errorText = "") {
         </div>
       </section>`).join("")}
 
-    <section class="block">
-      <button class="fold" id="spotify-toggle" aria-expanded="${spotifyOpen}" aria-controls="spotify-panel">
-        ${icon("library")}
-        <span class="fold-text"><b>Your Spotify</b><span id="spotify-summary">${spotifySummary()}</span></span>
-        <span class="chev">${icon("down")}</span>
-      </button>
-      <div class="fold-panel" id="spotify-panel" ${spotifyOpen ? "" : "hidden"}></div>
-    </section>
+    ${LIBRARIES.map(libraryFold).join("")}
 
     <section class="block">
       <button class="fold" id="artists-toggle" aria-expanded="${artistPicked}" aria-controls="artists-panel">
@@ -1402,7 +1511,8 @@ function renderSetup(errorText = "") {
   wireTopbar();
   wireCategories();
   wireArtists(artistPicked);
-  wireSpotify(spotifyOpen);
+  LIBRARIES.forEach(wireLibrary);
+  openLibraryNext = null;
 
   app.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => {
     settings.clip = Number(b.dataset.clip);
@@ -1444,79 +1554,112 @@ function selectChoice(next) {
     b.setAttribute("aria-pressed", String(next.type === "category" && b.dataset.cat === next.id)));
   app.querySelectorAll("[data-artist]").forEach(b =>
     b.setAttribute("aria-pressed", String(next.type === "artist" && b.dataset.artist === next.id)));
-  app.querySelectorAll("[data-sp]").forEach(b =>
-    b.setAttribute("aria-pressed", String((next.type === "liked" && b.dataset.sp === "liked") || (next.type === "playlist" && b.dataset.sp === next.id))));
+  app.querySelectorAll("[data-lib]").forEach(b =>
+    b.setAttribute("aria-pressed", String(next.type === "library" && b.dataset.lib === `${next.service}:${next.id}`)));
   const summary = document.getElementById("artist-summary");
   if (summary) summary.textContent = next.type === "artist" ? `Playing ${next.name}` : "Guess the songs of one artist";
-  const spSummary = document.getElementById("spotify-summary");
-  if (spSummary) spSummary.textContent = spotifySummary();
+  LIBRARIES.forEach(lib => {
+    const el = document.getElementById(`${lib.key}-summary`);
+    if (el) el.textContent = librarySummary(lib);
+  });
 }
 
-/* ---------- Your Spotify ---------- */
-let openSpotifyNext = false;
+/* ---------- Your music libraries (Spotify, YouTube Music) ---------- */
+const LIBRARIES = [
+  { key: "spotify", title: "Your Spotify", blurb: "Play songs from your Spotify", connect: "Connect Spotify",
+    liked: "Liked Songs", likedChoice: "your Liked Songs", colors: ["#ff2e88", "#3d6bff"],
+    hint: "Log in with Spotify to play your Liked Songs or your own playlists. Works for accounts added to the app in the Spotify developer dashboard.",
+    playlistNote: "" },
+  { key: "youtube", title: "Your YouTube Music", blurb: "Play songs from YouTube Music", connect: "Connect YouTube Music",
+    liked: "Liked music", likedChoice: "your liked music", colors: ["#ff3b30", "#ff8a00"],
+    hint: "Log in with Google to play your liked songs or playlists from YouTube Music. Works for accounts added as test users in the Google Cloud project, and the login lasts about an hour.",
+    playlistNote: "" },
+];
+let openLibraryNext = null;
 
-function spotifySummary() {
-  const c = settings.choice;
-  if (c.type === "liked") return "Playing your Liked Songs";
-  if (c.type === "playlist") return `Playing ${c.name}`;
-  return SongSource.spotify.connected() ? "Your Liked Songs and playlists" : "Play songs from your own library";
+const libraryPicked = (lib, c = settings.choice) => c.type === "library" && c.service === lib.key;
+
+function librarySummary(lib) {
+  if (libraryPicked(lib)) return `Playing ${settings.choice.name}`;
+  return SongSource.libraries[lib.key].connected() ? `Your ${lib.liked.toLowerCase()} and playlists` : lib.blurb;
 }
 
-function wireSpotify(startOpen) {
-  const sp = SongSource.spotify;
-  const toggle = document.getElementById("spotify-toggle");
-  const panel = document.getElementById("spotify-panel");
+function libraryFold(lib) {
+  const open = openLibraryNext === lib.key || libraryPicked(lib);
+  return `
+    <section class="block">
+      <button class="fold" id="${lib.key}-toggle" aria-expanded="${open}" aria-controls="${lib.key}-panel" data-open="${open}">
+        ${icon("library")}
+        <span class="fold-text"><b>${lib.title}</b><span id="${lib.key}-summary">${esc(librarySummary(lib))}</span></span>
+        <span class="chev">${icon("down")}</span>
+      </button>
+      <div class="fold-panel" id="${lib.key}-panel" ${open ? "" : "hidden"}></div>
+    </section>`;
+}
+
+function wireLibrary(lib) {
+  const service = SongSource.libraries[lib.key];
+  const toggle = document.getElementById(`${lib.key}-toggle`);
+  const panel = document.getElementById(`${lib.key}-panel`);
   let filled = false;
 
-  function showConnect() {
-    panel.innerHTML = sp.available ? `
-      <p class="hint">Log in with Spotify to play your Liked Songs or your own playlists. Works for accounts added to the app in the Spotify developer dashboard.</p>
-      <button class="ghost-btn" id="sp-connect">${icon("library")} Connect Spotify</button>` : `
-      <p class="hint">Spotify connects on the website version of Song Quiz, at cathero1.github.io/song-quiz.</p>`;
-    const btn = document.getElementById("sp-connect");
-    if (btn) btn.onclick = () => { btn.disabled = true; sp.connect(); };
+  function showConnect(errorText = "") {
+    panel.innerHTML = `${errorText ? `<p class="error">${esc(errorText)}</p>` : ""}${service.available ? `
+      <p class="hint">${lib.hint}</p>
+      <button class="ghost-btn" data-connect>${icon("library")} ${lib.connect}</button>` : `
+      <p class="hint">This connects on the website version of Song Quiz, at cathero1.github.io/song-quiz.</p>`}`;
+    const btn = panel.querySelector("[data-connect]");
+    if (btn) btn.onclick = () => {
+      btn.disabled = true;
+      service.connect().then(showLibrary).catch(err => showConnect(err.message));
+    };
   }
 
   async function showLibrary() {
+    document.getElementById(`${lib.key}-summary`).textContent = librarySummary(lib);
     panel.innerHTML = `<p class="hint">Loading your playlists…</p>`;
     try {
-      const [me, lists] = await Promise.all([sp.profile(), sp.playlists()]);
+      const [me, lists] = await Promise.all([service.profile(), service.playlists()]);
       const card = (id, name, sub, art) => `
-        <button class="cat" data-sp="${esc(id)}" aria-pressed="false" aria-label="${esc(name)}">
-          <span class="cat-art" style="--c1:#ff2e88;--c2:#3d6bff">${art}<span class="tick">${icon("check")}</span></span>
+        <button class="cat" data-lib="${lib.key}:${esc(id)}" aria-pressed="false" aria-label="${esc(name)}">
+          <span class="cat-art" style="--c1:${lib.colors[0]};--c2:${lib.colors[1]}">${art}<span class="tick">${icon("check")}</span></span>
           <span class="cat-name">${esc(name)}</span>
           <span class="cat-sub">${esc(sub)}</span>
         </button>`;
       panel.innerHTML = `
         <div class="carousel">
-          ${card("liked", "Liked Songs", "Songs you've liked", `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.heart}</svg><span class="cat-label">Liked</span>`)}
-          ${lists.map(p => card(p.id, p.name, `${p.total} songs`, p.picture ? `<img class="cat-img on" src="${esc(p.picture)}" alt="">` : `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.library}</svg>`)).join("")}
+          ${card("liked", lib.liked, "Songs you've liked", `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.heart}</svg><span class="cat-label">Liked</span>`)}
+          ${lists.map(p => card(p.id, p.name, `${p.total} songs`, p.picture
+            ? `<img class="cat-img on" src="${esc(p.picture)}" alt="">`
+            : `<svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS.library}</svg>`)).join("")}
         </div>
-        <p class="sp-foot">Connected as ${esc(me.name)} · <button class="link-btn" id="sp-out">Disconnect</button></p>`;
-      panel.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => {
-        if (b.dataset.sp === "liked") selectChoice({ type: "liked", name: "your Liked Songs" });
-        else { const p = lists.find(x => x.id === b.dataset.sp); selectChoice({ type: "playlist", id: p.id, name: p.name }); }
+        <p class="sp-foot">Connected as ${esc(me.name)} · <button class="link-btn" data-disconnect>Disconnect</button></p>`;
+      panel.querySelectorAll("[data-lib]").forEach(b => b.onclick = () => {
+        const id = b.dataset.lib.slice(lib.key.length + 1);
+        const p = lists.find(x => x.id === id);
+        selectChoice({ type: "library", service: lib.key, id, name: id === "liked" ? lib.likedChoice : p.name });
       });
       selectChoice(settings.choice);
-      document.getElementById("sp-out").onclick = () => {
-        sp.disconnect();
-        if (["liked", "playlist"].includes(settings.choice.type)) selectChoice({ type: "category", id: "top" });
-        document.getElementById("spotify-summary").textContent = spotifySummary();
+      panel.querySelector("[data-disconnect]").onclick = () => {
+        service.disconnect();
+        if (libraryPicked(lib)) selectChoice({ type: "category", id: "top" });
+        document.getElementById(`${lib.key}-summary`).textContent = librarySummary(lib);
         showConnect();
       };
     } catch (err) {
-      panel.innerHTML = `<p class="error">${esc(err.message)}</p>`;
-      if (!sp.connected()) showConnect();
+      if (service.connected()) panel.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+      else showConnect(err.message);
     }
   }
 
   const open = isOpen => {
     toggle.setAttribute("aria-expanded", String(isOpen));
     panel.hidden = !isOpen;
-    if (isOpen && !filled) { filled = true; sp.connected() ? showLibrary() : showConnect(); }
+    if (isOpen && service.prepare) service.prepare().catch(() => {});
+    if (isOpen && !filled) { filled = true; service.connected() ? showLibrary() : showConnect(); }
   };
   toggle.onclick = () => open(panel.hidden);
-  if (startOpen) open(true);
+  if (toggle.dataset.open === "true") open(true);
 }
 
 function wireCategories() {
@@ -2055,8 +2198,8 @@ function openStats(selected) {
 statsDialog.addEventListener("click", e => { if (e.target === statsDialog) statsDialog.close(); });
 
 // Finish a Spotify login if Spotify just sent us back here, then show the setup screen.
-SongSource.spotify.finishLogin().then(result => {
-  if (result === "ok") openSpotifyNext = true;
+SongSource.libraries.spotify.finishLogin().then(result => {
+  if (result === "ok") openLibraryNext = "spotify";
   renderSetup(result && result !== "ok" ? result : "");
 });
 </script>
