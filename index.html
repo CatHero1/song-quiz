@@ -72,6 +72,83 @@
   --scrim: rgba(58, 15, 42, .35);
 }
 
+/* Category rows (Spotify-style) */
+.row-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row-nav { display: flex; gap: 6px; }
+@media (hover: none) { .row-nav { display: none; } }
+.nav-btn {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 3px 0 var(--edge-deep);
+}
+.nav-btn .ico { width: 18px; height: 18px; }
+.carousel {
+  display: grid; grid-auto-flow: column; grid-auto-columns: clamp(128px, 36vw, 146px); gap: 14px;
+  overflow-x: auto; scroll-snap-type: x proximity; scroll-padding-inline: 4px;
+  padding: 8px 4px 10px; margin-inline: -4px; scrollbar-width: none;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.cat { display: flex; flex-direction: column; gap: 6px; padding: 0; border: 0; background: none; text-align: left; scroll-snap-align: start; min-width: 0; }
+.cat-art {
+  position: relative; display: block; aspect-ratio: 1; border-radius: 12px; overflow: hidden; max-width: 100%;
+  background: linear-gradient(150deg, var(--c1), color-mix(in srgb, var(--c2) 70%, #000));
+  box-shadow: 0 4px 0 color-mix(in srgb, var(--c2) 45%, #000); transition: transform .15s, box-shadow .15s;
+}
+.watermark { position: absolute; right: -14%; top: -10%; width: 78%; height: 78%; fill: none; stroke: rgba(255,255,255,.3); stroke-width: 1.5; transform: rotate(-12deg); }
+.cat-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .5s; }
+.cat-img.on { opacity: 1; }
+.mosaic { display: grid; grid-template-columns: 1fr 1fr; }
+.mosaic img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cat-label {
+  position: absolute; left: 8px; bottom: 9px; padding: 1px 6px; border-radius: 4px; max-width: 58%;
+  background: color-mix(in srgb, var(--c1) 70%, #fff); color: #111; font-weight: 700; font-size: 13px; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cat-badge {
+  position: absolute; right: 8px; bottom: 8px; padding: 0 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--c1) 70%, #fff); color: #111; font-family: var(--font-marquee); font-size: 19px; line-height: 1.25;
+}
+.tick {
+  position: absolute; top: 7px; right: 7px; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: #fff; color: #111; box-shadow: 0 2px 6px rgba(0,0,0,.3); opacity: 0; transform: scale(.5); transition: opacity .15s, transform .15s;
+}
+.tick .ico { width: 16px; height: 16px; stroke-width: 3; }
+.cat[aria-pressed="true"] .tick, .artist[aria-pressed="true"] .tick { opacity: 1; transform: scale(1); }
+.cat[aria-pressed="true"] .cat-art { transform: translateY(-3px); box-shadow: 0 0 0 3px var(--floor), 0 0 0 6px var(--text), 0 7px 0 3px color-mix(in srgb, var(--c2) 45%, #000); }
+.cat-name { font-weight: 700; font-size: 15px; line-height: 1.2; }
+.cat-sub { color: var(--muted); font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Artists (collapsible) */
+.fold {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; border-radius: 16px; text-align: left;
+  background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 4px 0 var(--edge-deep);
+}
+.fold > .ico { color: var(--brand); }
+.fold-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fold-text b { font-size: 17px; }
+.fold-text span { color: var(--muted); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev .ico { transition: transform .2s; }
+.fold[aria-expanded="true"] .chev .ico { transform: rotate(180deg); }
+.fold-panel { display: flex; flex-direction: column; gap: 10px; }
+.search {
+  display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 14px;
+  background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 4px 0 var(--edge-deep);
+}
+.search:focus-within { border-color: var(--brand); }
+.search .ico { color: var(--muted); }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 12px 0; font-size: 16px; font-weight: 600; }
+.search input:focus-visible { outline: none; }
+.carousel.artists { grid-auto-columns: clamp(96px, 26vw, 112px); }
+.artist { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; border: 0; background: none; scroll-snap-align: start; min-width: 0; }
+.artist-pic {
+  position: relative; width: 100%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  background: var(--card-hi); font-family: var(--font-marquee); font-size: 28px; color: var(--muted);
+  box-shadow: 0 4px 0 var(--edge-deep); transition: transform .15s, box-shadow .15s;
+}
+.artist-pic img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.artist-pic .tick { top: 0; right: 0; }
+.artist[aria-pressed="true"] .artist-pic { transform: translateY(-3px); box-shadow: 0 0 0 3px var(--floor), 0 0 0 6px var(--text); }
+.artist-name { font-weight: 600; font-size: 14px; text-align: center; line-height: 1.2; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Dark themes */
 :root[data-look="neon"], :root[data-look="vinyl"], :root[data-look="lagoon"] {
   --gold-bg: #2e2508; --gold-edge: #ffbf00; --gold-deep: #6b5000; --gold-text: #ffcf40;
@@ -207,7 +284,6 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
   background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 5px 0 var(--edge-deep);
   font-weight: 600; font-size: 16px; text-align: left; transition: transform .08s, box-shadow .08s, border-color .15s, background .15s;
 }
-.tile .ico { color: var(--muted); transition: color .15s; }
 .tile:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--edge-deep); }
 .tile[aria-pressed="true"] {
   border-color: color-mix(in srgb, var(--a1) 80%, var(--edge));
@@ -215,8 +291,6 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
   box-shadow: 0 5px 0 color-mix(in srgb, var(--a1) 70%, #000), 0 8px 22px color-mix(in srgb, var(--a1) 30%, transparent);
 }
 :root[data-look="lemon"] .tile[aria-pressed="true"] { background: var(--a1); border-color: var(--edge); box-shadow: 0 5px 0 var(--edge-deep); }
-.tile[aria-pressed="true"] .ico { color: color-mix(in srgb, var(--a1) 75%, var(--text)); }
-:root[data-look="lemon"] .tile[aria-pressed="true"] .ico { color: var(--text); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px 10px; }
 .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .tiles.three .tile { justify-content: center; }
@@ -446,14 +520,18 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v2";
+const APP_VERSION = "v3";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
-   come from. Swap it (Spotify liked songs, a real server) without
-   touching the game or UI.
-   Contract:  getPool({ era, genre }) -> Promise<Song[]>
-   Song:      { id, title, artist, preview, cover }
+   come from. Swap it (Spotify, a real server) without touching
+   the game or UI.
+   Contract:
+     rows, categories                -> what players can pick
+     peek(categoryId)                -> Promise<{ covers: string[], artists: string[] }> (card art)
+     topArtists(), searchArtists(q)  -> Promise<Artist[]>   Artist: { id, name, picture }
+     getPool({ type: "category" | "artist", id }) -> Promise<Song[]>
+     Song: { id, title, artist, preview, cover }
    ============================================================ */
 const SongSource = (() => {
   const API = "https://api.deezer.com";
@@ -482,25 +560,28 @@ const SongSource = (() => {
     });
   }
 
-  const eras = [
-    { id: "top",   label: "Today's Top Hits", search: null },
-    { id: "2010s", label: "2010s", search: "2010s" },
-    { id: "2000s", label: "2000s", search: "2000s" },
-    { id: "90s",   label: "90s",   search: "90s" },
-    { id: "80s",   label: "80s",   search: "80s" },
-    { id: "70s",   label: "70s",   search: "70s" },
-    { id: "60s",   label: "60s",   search: "60s" },
+  const rows = [
+    { id: "now", label: "Right now" },
+    { id: "decades", label: "Decades" },
+    { id: "genres", label: "Genres" },
   ];
-  // Deezer genre ids (used for the live charts).
-  const genres = [
-    { id: "all",     label: "Any genre", deezer: 0,   search: "" },
-    { id: "pop",     label: "Pop",       deezer: 132, search: "pop" },
-    { id: "rock",    label: "Rock",      deezer: 152, search: "rock" },
-    { id: "hiphop",  label: "Hip-Hop",   deezer: 116, search: "hip hop" },
-    { id: "rnb",     label: "R&B",       deezer: 165, search: "r&b" },
-    { id: "country", label: "Country",   deezer: 84,  search: "country" },
-    { id: "dance",   label: "Dance",     deezer: 113, search: "dance" },
-    { id: "latin",   label: "Latin",     deezer: 197, search: "latin" },
+  // `chart` = Deezer's live chart for that genre id; `query` = playlist search.
+  const categories = [
+    { id: "top",         row: "now", label: "Today's Top Hits", era: "now", genre: null,      chart: 0 },
+    { id: "now-pop",     row: "now", label: "Today's Pop",      era: "now", genre: "pop",     chart: 132 },
+    { id: "now-hiphop",  row: "now", label: "Today's Hip-Hop",  era: "now", genre: "hiphop",  chart: 116 },
+    { id: "now-rock",    row: "now", label: "Today's Rock",     era: "now", genre: "rock",    chart: 152 },
+    { id: "now-rnb",     row: "now", label: "Today's R&B",      era: "now", genre: "rnb",     chart: 165 },
+    { id: "now-country", row: "now", label: "Today's Country",  era: "now", genre: "country", chart: 84 },
+    { id: "now-dance",   row: "now", label: "Today's Dance",    era: "now", genre: "dance",   chart: 113 },
+    { id: "now-latin",   row: "now", label: "Today's Latin",    era: "now", genre: "latin",   chart: 197 },
+    ...["2010s", "2000s", "90s", "80s", "70s", "60s"].map(d =>
+      ({ id: d, row: "decades", label: `${d} Hits`, era: d, genre: null, query: `${d} hits` })),
+    ...[["80s", "pop", "Pop"], ["90s", "rock", "Rock"], ["2000s", "hiphop", "Hip-Hop"], ["90s", "rnb", "R&B"],
+        ["70s", "disco", "Disco"], ["80s", "rock", "Rock"], ["2010s", "pop", "Pop"], ["90s", "hiphop", "Hip-Hop"],
+        ["2000s", "pop", "Pop"], ["2010s", "dance", "Dance"], ["2000s", "country", "Country"], ["60s", "rock", "Rock"]]
+      .map(([d, g, name]) => ({ id: `${d}-${g}`, row: "genres", label: `${d} ${name}`, era: d, genre: g,
+                                 query: `${d} ${name.toLowerCase().replace("-", " ")} hits` })),
   ];
 
   function normalize(t) {
@@ -514,42 +595,82 @@ const SongSource = (() => {
     };
   }
 
+  // Same song twice (remasters, live versions) counts once.
   function dedupe(songs) {
     const seen = new Set();
     return songs.filter(s => {
       if (!s || !s.title || !s.artist) return false;
-      const key = (s.title + "|" + s.artist).toLowerCase();
+      const key = (s.title.replace(/\s[-–]\s.*$|\s*[([].*?[)\]]/g, "") + "|" + s.artist).toLowerCase().trim();
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
   }
 
-  async function fromPlaylists(query) {
-    const found = await jsonp("/search/playlist", { q: query, limit: 15 });
-    const lists = (found.data || []).filter(p => (p.nb_tracks || 0) >= 30).slice(0, 2);
-    let songs = [];
-    for (const list of lists) {
-      const tracks = await jsonp(`/playlist/${list.id}/tracks`, { limit: 100 });
-      songs = songs.concat((tracks.data || []).map(normalize));
+  const loaded = new Map(); // categoryId -> Promise<Song[]>
+  function categorySongs(cat) {
+    if (!loaded.has(cat.id)) {
+      const job = (async () => {
+        if (cat.chart !== undefined) {
+          const chart = await jsonp(`/chart/${cat.chart}/tracks`, { limit: 100 });
+          return dedupe((chart.data || []).map(normalize));
+        }
+        const found = await jsonp("/search/playlist", { q: cat.query, limit: 15 });
+        const lists = (found.data || []).filter(p => (p.nb_tracks || 0) >= 30).slice(0, 2);
+        let songs = [];
+        for (const list of lists) {
+          const tracks = await jsonp(`/playlist/${list.id}/tracks`, { limit: 100 });
+          songs = songs.concat((tracks.data || []).map(normalize));
+        }
+        return dedupe(songs);
+      })();
+      job.catch(() => loaded.delete(cat.id)); // let a failed load be retried
+      loaded.set(cat.id, job);
     }
-    return songs;
+    return loaded.get(cat.id);
   }
 
-  async function getPool({ era, genre }) {
-    const e = eras.find(x => x.id === era) || eras[0];
-    const g = genres.find(x => x.id === genre) || genres[0];
-    let songs;
-    if (!e.search) {
-      const chart = await jsonp(`/chart/${g.deezer}/tracks`, { limit: 100 });
-      songs = (chart.data || []).map(normalize);
-    } else {
-      songs = await fromPlaylists(`${e.search} ${g.search} hits`.replace(/\s+/g, " ").trim());
-    }
-    return dedupe(songs);
+  const PEEK_KEY = "ntt-peek-v1";
+  const PEEK_TTL = 12 * 60 * 60 * 1000;
+  function peekCache() {
+    try { return JSON.parse(localStorage.getItem(PEEK_KEY) || "{}") || {}; } catch (_) { return {}; }
+  }
+  async function peek(id) {
+    const cached = peekCache()[id];
+    if (cached && Date.now() - cached.t < PEEK_TTL) return cached;
+    const cat = categories.find(c => c.id === id);
+    const songs = await categorySongs(cat);
+    const covers = [...new Set(songs.map(s => s.cover).filter(Boolean))].slice(0, 4);
+    const artists = [...new Set(songs.map(s => s.artist))].slice(0, 3);
+    const entry = { t: Date.now(), covers, artists };
+    try {
+      const all = peekCache();
+      all[id] = entry;
+      localStorage.setItem(PEEK_KEY, JSON.stringify(all));
+    } catch (_) { /* storage unavailable */ }
+    return entry;
   }
 
-  return { eras, genres, getPool };
+  const toArtist = a => ({ id: String(a.id), name: a.name, picture: a.picture_medium || a.picture || "" });
+  async function topArtists() {
+    const res = await jsonp("/chart/0/artists", { limit: 20 });
+    return (res.data || []).map(toArtist);
+  }
+  async function searchArtists(q) {
+    const res = await jsonp("/search/artist", { q, limit: 12 });
+    return (res.data || []).map(toArtist);
+  }
+
+  async function getPool(choice) {
+    if (choice.type === "artist") {
+      const res = await jsonp(`/artist/${choice.id}/top`, { limit: 100 });
+      return dedupe((res.data || []).map(normalize));
+    }
+    const cat = categories.find(c => c.id === choice.id) || categories[0];
+    return categorySongs(cat);
+  }
+
+  return { rows, categories, peek, topArtists, searchArtists, getPool };
 })();
 
 /* ============================================================
@@ -771,7 +892,6 @@ const ICONS = {
   "80s": '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 5.5a6.5 6.5 0 0 1 6.5 6.5"/>',
   "70s": '<circle cx="12" cy="13.5" r="7"/><path d="M12 2.5v4M5 13.5h14M12 6.5c-2.4 2-2.4 12 0 14M12 6.5c2.4 2 2.4 12 0 14M6.4 10h11.2M6.4 17h11.2"/>',
   "60s": '<rect x="3" y="8.5" width="18" height="11.5" rx="2"/><path d="M7 8.5l9-5"/><circle cx="9" cy="14.25" r="3"/><path d="M15 12.5h3M15 16h3"/>',
-  all: '<path d="M3 7h3c5 0 7 10 12 10h3M3 17h3c2 0 3.2-1.5 4.3-3.3M13.7 10.3C14.8 8.5 16 7 18 7h3M18 4l3 3-3 3M18 14l3 3-3 3"/>',
   pop: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z"/>',
   rock: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
   hiphop: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>',
@@ -779,26 +899,35 @@ const ICONS = {
   country: '<path d="M3 15c3 3 15 3 18 0M7 15c0-5 1-9 3-9 1 0 1.5 1 2 1s1-1 2-1c2 0 3 4 3 9"/>',
   dance: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
   latin: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  timer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>',
   skip: '<path d="M5 4l10 8-10 8z"/><path d="M19 5v14"/>',
   send: '<path d="M5 12h14M13 6l6 6-6 6"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7"/>',
   cross: '<path d="M6 6l12 12M18 6L6 18"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>',
+  artist: '<circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/>',
+  down: '<path d="M6 9l6 6 6-6"/>',
+  left: '<path d="M15 6l-6 6 6 6"/>',
+  right: '<path d="M9 6l6 6-6 6"/>',
   stats: '<path d="M4 20V11M10 20V4M16 20v-6M22 20H2"/>',
   replay: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
 };
 const icon = name => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ""}</svg>`;
 
-// Highlight colors per era/genre: saturated mid-tones that read on light backgrounds.
-const ACCENTS = {
-  top: ["#00b4ff", "#ff2e88"], "2010s": ["#ff2e88", "#00b4ff"], "2000s": ["#14c27a", "#00b4ff"],
-  "90s": ["#ff5a1f", "#00c2c7"], "80s": ["#ff2e88", "#ff8a00"], "70s": ["#ff9a00", "#e8b100"], "60s": ["#ff6b35", "#14c27a"],
-  pop: ["#ff2e88", "#00b4ff"], rock: ["#f22b2b", "#ff9a00"], hiphop: ["#f5a300", "#ff5a1f"], rnb: ["#ff4fa3", "#ff8a00"],
-  country: ["#ff9a00", "#c96a17"], dance: ["#00b4ff", "#14c27a"], latin: ["#ff5a1f", "#f5b800"],
-};
+// Card and highlight colors per decade and genre.
+const ERA_COLORS = { now: "#00b4ff", "2010s": "#3d6bff", "2000s": "#14a865", "90s": "#00a3ad", "80s": "#ff2e88", "70s": "#ff8a00", "60s": "#e04f2b" };
+const GENRE_COLORS = { pop: "#ff3d95", rock: "#e2231a", hiphop: "#e08a00", rnb: "#c2185b", country: "#b8641a", dance: "#0096e0", latin: "#ff5a1f", disco: "#d4a000" };
+const GENRE_NAMES = { pop: "Pop", rock: "Rock", hiphop: "Hip-Hop", rnb: "R&B", country: "Country", dance: "Dance", latin: "Latin", disco: "Disco" };
+const ARTIST_COLORS = ["#ff2e88", "#00b4ff"];
+// Free Unsplash photos for the decade cards (unsplash.com/photos/<id>).
+const DECADE_PHOTOS = { "2010s": "PDX_a_82obo", "2000s": "syexL_Ke5V8", "90s": "1VMFqrFUYvE", "80s": "Kj4o6jCPulI", "70s": "8x0ehBGa03Q", "60s": "SD3z7dtJ0N0" };
+function catColors(c) {
+  if (c.row === "decades") return [ERA_COLORS[c.era], ERA_COLORS[c.era]];
+  if (c.row === "now") return c.genre ? [GENRE_COLORS[c.genre], ERA_COLORS.now] : [ERA_COLORS.now, "#ff2e88"];
+  return [GENRE_COLORS[c.genre], ERA_COLORS[c.era]];
+}
 const PLAYER_COLORS = ["#ff2e88", "#00a6f0", "#14b870", "#ff8a00", "#f22b2b", "#00b5b8", "#e8a700", "#3d6bff"];
 // Swatch = [background, second tone, accent].
 const THEMES = [
@@ -813,7 +942,8 @@ const playerColor = i => PLAYER_COLORS[i % PLAYER_COLORS.length];
 
 function applyAccent() {
   document.documentElement.dataset.look = settings.look;
-  const [a1, a2] = settings.genre !== "all" ? ACCENTS[settings.genre] : ACCENTS[settings.era];
+  const cat = SongSource.categories.find(c => c.id === settings.choice.id);
+  const [a1, a2] = settings.choice.type === "artist" || !cat ? ARTIST_COLORS : catColors(cat);
   document.documentElement.style.setProperty("--a1", a1);
   document.documentElement.style.setProperty("--a2", a2);
 }
@@ -941,13 +1071,16 @@ function primeAudio() {
 }
 
 
-const settings = { look: "sky", era: "top", genre: "all", clip: 10, players: ["Player 1", "Player 2"] };
+const settings = { look: "sky", choice: { type: "category", id: "top" }, clip: 10, players: ["Player 1", "Player 2"] };
 try {
   const saved = JSON.parse(localStorage.getItem("ntt-settings") || "null");
   if (saved && Array.isArray(saved.players) && saved.players.length) Object.assign(settings, saved);
 } catch (_) { /* storage unavailable: use defaults */ }
-if (!ACCENTS[settings.era]) settings.era = "top";
-if (settings.genre !== "all" && !ACCENTS[settings.genre]) settings.genre = "all";
+delete settings.era;   // older versions picked era + genre separately
+delete settings.genre;
+const validChoice = c => c && ((c.type === "category" && SongSource.categories.some(x => x.id === c.id)) ||
+  (c.type === "artist" && c.id && c.name));
+if (!validChoice(settings.choice)) settings.choice = { type: "category", id: "top" };
 if (!THEMES.some(t => t.id === settings.look)) settings.look = "sky";
 
 function saveSettings() {
@@ -1036,8 +1169,9 @@ document.addEventListener("keydown", e => {
 function renderSetup(errorText = "") {
   stopClip();
   applyAccent();
-  const choice = (group, id, label, iconName, current) =>
-    `<button class="tile" data-${group}="${id}" aria-pressed="${id === current}">${iconName ? icon(iconName) : ""}<span>${esc(label)}</span></button>`;
+  const choice = (group, id, label, current) =>
+    `<button class="tile" data-${group}="${id}" aria-pressed="${id === current}"><span>${esc(label)}</span></button>`;
+  const artistPicked = settings.choice.type === "artist";
 
   app.innerHTML = `
     ${topbar("", true)}
@@ -1047,19 +1181,39 @@ function renderSetup(errorText = "") {
       <div class="ptiles" id="players"></div>
     </section>
 
-    <section class="block">
-      <h2 class="section-title">Era</h2>
-      <div class="tiles">${SongSource.eras.map(e => choice("era", e.id, e.label, e.id, settings.era)).join("")}</div>
-    </section>
+    ${SongSource.rows.map(row => `
+      <section class="block">
+        <div class="row-head">
+          <h2 class="section-title">${row.label}</h2>
+          <div class="row-nav">
+            <button class="nav-btn" data-scroll="${row.id}" data-dir="-1" aria-label="Scroll ${row.label} left">${icon("left")}</button>
+            <button class="nav-btn" data-scroll="${row.id}" data-dir="1" aria-label="Scroll ${row.label} right">${icon("right")}</button>
+          </div>
+        </div>
+        <div class="carousel" id="row-${row.id}">
+          ${SongSource.categories.filter(c => c.row === row.id).map(categoryCard).join("")}
+        </div>
+      </section>`).join("")}
 
     <section class="block">
-      <h2 class="section-title">Genre</h2>
-      <div class="tiles">${SongSource.genres.map(g => choice("genre", g.id, g.label, g.id, settings.genre)).join("")}</div>
+      <button class="fold" id="artists-toggle" aria-expanded="${artistPicked}" aria-controls="artists-panel">
+        ${icon("artist")}
+        <span class="fold-text"><b>Artists</b><span id="artist-summary">${artistPicked ? `Playing ${esc(settings.choice.name)}` : "Guess the songs of one artist"}</span></span>
+        <span class="chev">${icon("down")}</span>
+      </button>
+      <div class="fold-panel" id="artists-panel" ${artistPicked ? "" : "hidden"}>
+        <form class="search" id="artist-search" role="search">
+          ${icon("search")}
+          <input id="artist-q" type="search" placeholder="Search for an artist" autocomplete="off" aria-label="Search for an artist">
+        </form>
+        <p class="hint" id="artist-hint">Popular right now</p>
+        <div class="carousel artists" id="artist-row"></div>
+      </div>
     </section>
 
     <section class="block">
       <h2 class="section-title">Clip length</h2>
-      <div class="tiles three">${[5, 10, 15].map(s => choice("clip", String(s), `${s} sec`, "", String(settings.clip))).join("")}</div>
+      <div class="tiles three">${[5, 10, 15].map(s => choice("clip", String(s), `${s} sec`, String(settings.clip))).join("")}</div>
     </section>
 
     ${errorText ? `<p class="error" role="alert">${esc(errorText)}</p>` : ""}
@@ -1068,23 +1222,158 @@ function renderSetup(errorText = "") {
 
   renderPlayerTiles();
   wireTopbar();
+  wireCategories();
+  wireArtists(artistPicked);
 
-  const pick = (attr, apply) => app.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = () => {
-    apply(b.dataset[attr]);
-    app.querySelectorAll(`[data-${attr}]`).forEach(o => o.setAttribute("aria-pressed", String(o === b)));
-    applyAccent();
+  app.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => {
+    settings.clip = Number(b.dataset.clip);
+    app.querySelectorAll("[data-clip]").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
     saveSettings();
   });
-  pick("era", v => settings.era = v);
-  pick("genre", v => settings.genre = v);
-  pick("clip", v => settings.clip = Number(v));
-
   document.getElementById("start").onclick = () => {
     readNames();
     settings.players = settings.players.map((n, i) => n.trim() || `Player ${i + 1}`);
     saveSettings();
     startGame();
   };
+}
+
+/* ---------- Category cards ---------- */
+function categoryCard(c) {
+  const [c1, c2] = catColors(c);
+  const picked = settings.choice.type === "category" && settings.choice.id === c.id;
+  const label = c.row === "decades" ? "Hits" : c.genre ? GENRE_NAMES[c.genre] : "Top Hits";
+  const badge = c.era === "now" ? "Now" : c.era;
+  return `
+    <button class="cat" data-cat="${c.id}" aria-pressed="${picked}" aria-label="${esc(c.label)}">
+      <span class="cat-art" style="--c1:${c1};--c2:${c2}">
+        <svg class="watermark" viewBox="0 0 24 24" aria-hidden="true">${ICONS[c.genre || (c.era === "now" ? "top" : c.era)] || ""}</svg>
+        <span class="cat-label">${esc(label)}</span>
+        <span class="cat-badge">${esc(badge)}</span>
+        <span class="tick">${icon("check")}</span>
+      </span>
+      <span class="cat-name">${esc(c.label)}</span>
+      <span class="cat-sub" data-sub="${c.id}">&nbsp;</span>
+    </button>`;
+}
+
+function selectChoice(next) {
+  settings.choice = next;
+  saveSettings();
+  applyAccent();
+  app.querySelectorAll("[data-cat]").forEach(b =>
+    b.setAttribute("aria-pressed", String(next.type === "category" && b.dataset.cat === next.id)));
+  app.querySelectorAll("[data-artist]").forEach(b =>
+    b.setAttribute("aria-pressed", String(next.type === "artist" && b.dataset.artist === next.id)));
+  const summary = document.getElementById("artist-summary");
+  if (summary) summary.textContent = next.type === "artist" ? `Playing ${next.name}` : "Guess the songs of one artist";
+}
+
+function wireCategories() {
+  app.querySelectorAll("[data-cat]").forEach(b => b.onclick = () => selectChoice({ type: "category", id: b.dataset.cat }));
+  app.querySelectorAll("[data-scroll]").forEach(b => b.onclick = () => {
+    const row = document.getElementById(`row-${b.dataset.scroll}`);
+    row.scrollBy({ left: Number(b.dataset.dir) * row.clientWidth * 0.8, behavior: "smooth" });
+  });
+  // Bring the picked card into view inside its row.
+  const picked = app.querySelector('[data-cat][aria-pressed="true"]');
+  if (picked) picked.parentElement.scrollLeft = picked.offsetLeft - picked.parentElement.offsetLeft - 8;
+
+  // Load card art as cards scroll into view, a few at a time.
+  const queue = [];
+  let running = 0;
+  const pump = () => {
+    while (running < 3 && queue.length) {
+      const card = queue.shift();
+      running++;
+      SongSource.peek(card.dataset.cat).then(info => fillCard(card, info)).catch(() => {})
+        .finally(() => { running--; pump(); });
+    }
+  };
+  const watcher = new IntersectionObserver(entries => entries.forEach(e => {
+    if (!e.isIntersecting) return;
+    watcher.unobserve(e.target);
+    queue.push(e.target);
+    pump();
+  }), { rootMargin: "0px 200px" });
+  app.querySelectorAll("[data-cat]").forEach(card => watcher.observe(card));
+}
+
+function fillCard(card, info) {
+  if (!card.isConnected) return;
+  const id = card.dataset.cat;
+  const art = card.querySelector(".cat-art");
+  const sub = card.querySelector(".cat-sub");
+  if (info.artists.length) sub.textContent = `${info.artists.join(", ")} and more`;
+  const photo = DECADE_PHOTOS[id];
+  const reveal = el => { art.insertBefore(el, art.querySelector(".cat-label")); requestAnimationFrame(() => el.classList.add("on")); };
+  if (photo) {
+    const img = new Image();
+    img.className = "cat-img";
+    img.alt = "";
+    img.onload = () => reveal(img);
+    img.src = `https://unsplash.com/photos/${photo}/download?w=400`;
+  } else if (info.covers.length === 4) {
+    const grid = document.createElement("span");
+    grid.className = "cat-img mosaic";
+    let ready = 0;
+    grid.innerHTML = info.covers.map(u => `<img src="${esc(u)}" alt="">`).join("");
+    grid.querySelectorAll("img").forEach(img => img.onload = () => { if (++ready === 4) reveal(grid); });
+  }
+}
+
+/* ---------- Artists ---------- */
+function wireArtists(startOpen) {
+  const toggle = document.getElementById("artists-toggle");
+  const panel = document.getElementById("artists-panel");
+  const row = document.getElementById("artist-row");
+  const hint = document.getElementById("artist-hint");
+  const input = document.getElementById("artist-q");
+  let loadedOnce = false, searchTimer = 0, latest = 0;
+
+  const card = a => `
+    <button class="artist" data-artist="${esc(a.id)}" aria-pressed="${settings.choice.type === "artist" && settings.choice.id === a.id}">
+      <span class="artist-pic">${a.picture ? `<img src="${esc(a.picture)}" alt="" loading="lazy">` : esc(a.name[0] || "?")}<span class="tick">${icon("check")}</span></span>
+      <span class="artist-name">${esc(a.name)}</span>
+    </button>`;
+
+  function show(list, label) {
+    const picked = settings.choice.type === "artist" ? settings.choice : null;
+    if (picked && !list.some(a => a.id === picked.id) && !input.value.trim()) list = [picked, ...list];
+    hint.textContent = list.length ? label : "No artists found. Try another spelling.";
+    row.innerHTML = list.map(card).join("");
+    row.querySelectorAll("[data-artist]").forEach((b, i) => b.onclick = () =>
+      selectChoice({ type: "artist", id: list[i].id, name: list[i].name, picture: list[i].picture }));
+  }
+
+  async function load(q) {
+    const ticket = ++latest;
+    hint.textContent = q ? `Searching for “${q}”…` : "Loading popular artists…";
+    try {
+      const list = q ? await SongSource.searchArtists(q) : await SongSource.topArtists();
+      if (ticket === latest) show(list, q ? `Results for “${q}”` : "Popular right now");
+    } catch (err) {
+      if (ticket === latest) hint.textContent = err.message;
+    }
+  }
+
+  const open = isOpen => {
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    panel.hidden = !isOpen;
+    if (isOpen && !loadedOnce) { loadedOnce = true; load(""); }
+  };
+  toggle.onclick = () => open(panel.hidden);
+  input.oninput = () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => load(input.value.trim()), 350);
+  };
+  document.getElementById("artist-search").onsubmit = e => {
+    e.preventDefault();
+    clearTimeout(searchTimer);
+    load(input.value.trim());
+    input.blur();
+  };
+  if (startOpen) open(true);
 }
 
 function readNames() {
@@ -1122,9 +1411,8 @@ function renderPlayerTiles(focusIndex = -1) {
 async function startGame() {
   primeAudio();
   applyAccent();
-  const era = SongSource.eras.find(e => e.id === settings.era);
-  const genre = SongSource.genres.find(g => g.id === settings.genre);
-  const what = [era.label, genre.id === "all" ? "" : genre.label].filter(Boolean).join(" · ");
+  const choice = settings.choice;
+  const what = choice.type === "artist" ? choice.name : SongSource.categories.find(c => c.id === choice.id).label;
   app.innerHTML = `
     <div class="loading">
       <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
@@ -1133,18 +1421,18 @@ async function startGame() {
 
   let pool;
   try {
-    pool = await SongSource.getPool({ era: settings.era, genre: settings.genre });
+    pool = await SongSource.getPool(choice);
   } catch (err) {
     renderSetup(err.message);
     return;
   }
   if (pool.length < Rules.minPool) {
-    renderSetup(`Only found ${pool.length} playable songs for ${what}. Try a different era or genre.`);
+    renderSetup(`Only found ${pool.length} playable songs for ${what}. Try a different pick.`);
     return;
   }
 
   const players = settings.players.map((name, i) => ({ name, score: 0, color: playerColor(i) }));
-  game = { pool, players, round: 1, turn: 0, recorded: false,
+  game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist",
            queue: buildQueue(pool, players.length * Rules.rounds) };
   renderTurn();
 }
@@ -1204,6 +1492,10 @@ function renderTurn() {
   const player = game.players[game.turn];
   const song = game.queue[(game.round - 1) * game.players.length + game.turn];
   const pts = Rules.pointsFor(game.round);
+  // In artist games everyone knows the artist, so only the title counts, worth both halves.
+  const artistMode = game.artistMode;
+  const titlePts = artistMode ? pts * 2 : pts;
+  const ask = artistMode ? "the song" : "the song and the artist";
   const isFinal = game.round === Rules.rounds;
   let replaysLeft = REPLAYS;
   let played = false;
@@ -1215,7 +1507,7 @@ function renderTurn() {
     <div class="board" id="board">${leaderboard()}</div>
 
     <section class="turn-head" style="--pc:${player.color}">
-      <span class="round-pill">Your turn · ${pts} + ${pts} pts</span>
+      <span class="round-pill">Your turn · ${artistMode ? `${titlePts} pts for the song` : `${pts} + ${pts} pts`}</span>
       <div class="turn-name">${esc(player.name)}</div>
       ${isFinal ? `<span class="double">Bonus round · double points</span>` : ""}
     </section>
@@ -1241,10 +1533,10 @@ function renderTurn() {
     <section class="answer" id="answer">
       <button class="mic" id="mic" aria-label="Answer out loud" ${Voice.supported ? "" : "disabled"}>${icon("mic")}</button>
       <p class="mic-status" id="mic-status" aria-live="polite">${Voice.supported
-        ? "The mic opens when the clip ends. Say the song and the artist."
+        ? `The mic opens when the clip ends. Say ${ask}.`
         : "Voice isn't available in this browser. Type your answer below."}</p>
       <form class="type-row" id="type-form" autocomplete="off">
-        <input class="typed" id="typed" placeholder="Or type: song by artist" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="Type your answer">
+        <input class="typed" id="typed" placeholder="${artistMode ? "Or type the song" : "Or type: song by artist"}" autocapitalize="off" spellcheck="false" enterkeyhint="send" aria-label="Type your answer">
         <button class="send" aria-label="Submit answer">${icon("send")}</button>
       </form>
     </section>
@@ -1312,7 +1604,7 @@ function renderTurn() {
 
   function replay() {
     if (locked || !played) return;
-    if (replaysLeft === 0) { status.textContent = "No replays left. Say the song and the artist."; listen(); return; }
+    if (replaysLeft === 0) { status.textContent = `No replays left. Say ${ask}.`; listen(); return; }
     replaysLeft--;
     updateReplays();
     play();
@@ -1323,7 +1615,7 @@ function renderTurn() {
     stopClip();
     Sfx.listen();
     mic.classList.add("listening");
-    status.textContent = "Listening… say the song and the artist.";
+    status.textContent = `Listening… say ${ask}.`;
     let heardSomething = false;
     Voice.listen({
       onText: text => { status.innerHTML = `Heard: <b>${esc(text)}</b>`; },
@@ -1359,10 +1651,10 @@ function renderTurn() {
     stopClip();
     const ms = firstPlayAt && !skipped ? performance.now() - firstPlayAt : 0;
     const titleRight = Boolean(result.title), artistRight = Boolean(result.artist);
-    const earned = (titleRight ? pts : 0) + (artistRight ? pts : 0);
+    const earned = (titleRight ? titlePts : 0) + (!artistMode && artistRight ? pts : 0);
     const before = player.score;
     player.score += earned;
-    StatsStore.recordTurn(player.name, [titleRight, artistRight], ms);
+    StatsStore.recordTurn(player.name, artistMode ? [titleRight] : [titleRight, artistRight], ms);
 
     if (titleRight && artistRight) Sfx.right();
     else if (titleRight || artistRight) Sfx.partial();
@@ -1421,7 +1713,7 @@ function showResult(song, r) {
     </div>
     <ul class="verdicts">
       ${line("Song", r.titleRight, r.result.title, song.title)}
-      ${line("Artist", r.artistRight, r.result.artist, song.artist)}
+      ${game.artistMode ? "" : line("Artist", r.artistRight, r.result.artist, song.artist)}
     </ul>
     ${r.heard ? `<p class="hint">You said: “${esc(r.heard)}”</p>` : ""}
     <button class="cta" id="next">${nextName ? `Pass to ${esc(nextName)}` : "See final scores"}</button>
