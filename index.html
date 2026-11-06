@@ -520,7 +520,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v3";
+const APP_VERSION = "v4";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1062,8 +1062,36 @@ const SILENCE = (() => {
   return URL.createObjectURL(new Blob([bytes], { type: "audio/wav" }));
 })();
 
+// Reads the answer out loud after a miss, using the device's built-in voice.
+const Announcer = (() => {
+  const synth = window.speechSynthesis;
+  let voice = null;
+  const pickVoice = () => {
+    const voices = synth ? synth.getVoices() : [];
+    voice = voices.find(v => /^en(-|_)US/i.test(v.lang) && /natural|samantha|google/i.test(v.name))
+      || voices.find(v => /^en(-|_)US/i.test(v.lang)) || voices.find(v => /^en/i.test(v.lang)) || null;
+  };
+  if (synth) { pickVoice(); synth.onvoiceschanged = pickVoice; }
+  function speak(text, volume) {
+    if (!synth) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US";
+    u.rate = 1.02;
+    u.volume = volume;
+    if (voice) u.voice = voice;
+    synth.speak(u);
+  }
+  return {
+    // Some phones only allow speech after a tap, so a silent word is spoken inside one.
+    unlock() { if (synth && !synth.speaking) speak(" ", 0); },
+    say(text) { if (synth) { synth.cancel(); speak(text, 1); } },
+    stop() { if (synth) synth.cancel(); },
+  };
+})();
+
 function primeAudio() {
   Sfx.unlock();
+  Announcer.unlock();
   if (audio.paused) {
     audio.src = SILENCE;
     audio.play().catch(() => {});
@@ -1096,6 +1124,7 @@ function esc(s) {
 
 function stopClip() {
   Voice.stop();
+  Announcer.stop();
   const mic = document.getElementById("mic");
   if (mic) mic.classList.remove("listening");
   cancelAnimationFrame(clipFrame);
@@ -1656,9 +1685,14 @@ function renderTurn() {
     player.score += earned;
     StatsStore.recordTurn(player.name, artistMode ? [titleRight] : [titleRight, artistRight], ms);
 
-    if (titleRight && artistRight) Sfx.right();
-    else if (titleRight || artistRight) Sfx.partial();
+    const fullyRight = titleRight && (artistMode || artistRight);
+    if (fullyRight) Sfx.right();
+    else if (titleRight || (!artistMode && artistRight)) Sfx.partial();
     else Sfx.wrong();
+    if (!fullyRight) {
+      const answer = artistMode ? `The song was ${song.title}.` : `The song was ${song.title}, by ${song.artist}.`;
+      setTimeout(() => { if (document.getElementById("result")) Announcer.say(answer); }, 700);
+    }
 
     document.getElementById("answer").hidden = true;
     clipBtn.disabled = true;
