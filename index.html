@@ -189,6 +189,10 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 /* Top bar */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .logo { font-size: 20px; }
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand.home { flex-direction: column; align-items: flex-start; gap: 6px; }
+.logo { white-space: nowrap; }
+.ver { padding: 2px 8px; border-radius: 999px; background: var(--card); border: var(--border-w) solid var(--edge); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; flex: none; }
 .logo.home { font-size: clamp(38px, 11vw, 60px); padding-top: 6px; text-shadow: 4px 4px 0 var(--brand); }
 .small-btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 14px;
@@ -440,6 +444,9 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 
 <script>
 "use strict";
+
+// Bump this with every update that goes live, so it's easy to tell which version is loaded.
+const APP_VERSION = "v2";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -968,7 +975,10 @@ function stopClip() {
 
 const topbar = (right, home = false) => `
   <header class="topbar">
-    ${home ? `<h1 class="marquee-text logo home">Song Quiz</h1>` : `<span class="marquee-text logo">Song Quiz</span>`}
+    <div class="brand ${home ? "home" : ""}">
+      ${home ? `<h1 class="marquee-text logo home">Song Quiz</h1>` : `<span class="marquee-text logo">Song Quiz</span>`}
+      <span class="ver" title="Version">${APP_VERSION}</span>
+    </div>
     <div style="display:flex;gap:8px;align-items:center">
       ${right || ""}
       <div class="theme-menu" id="theme-menu">
