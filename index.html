@@ -282,6 +282,11 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 
 /* Top bar */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tools { display: flex; gap: 8px; align-items: center; flex: none; }
+/* Home: the big logo gets its own line, with the buttons in a row above it. */
+.topbar.home { flex-wrap: wrap; row-gap: 4px; }
+.topbar.home .tools { order: 1; margin-left: auto; }
+.topbar.home .brand { order: 2; flex-basis: 100%; }
 .logo { font-size: 20px; }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand.home { flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -483,6 +488,7 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 .song .t { font-weight: 700; font-size: 20px; overflow-wrap: anywhere; line-height: 1.2; }
 .song .a { color: var(--muted); font-size: 16px; }
 .earned { font-family: var(--font-marquee); font-size: 30px; text-align: center; color: var(--text); text-shadow: 3px 3px 0 var(--right); }
+.guess-time { margin: -10px 0 0; text-align: center; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .earned.zero { color: var(--muted); text-shadow: none; font-size: 22px; }
 
 /* Final */
@@ -543,7 +549,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v13";
+const APP_VERSION = "v15";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1462,16 +1468,16 @@ function stopClip() {
   if (btn) btn.classList.remove("playing");
 }
 
-// In a game (`playing`), the bar keeps only the logo and the round; theme, version and stats wait for setup and the final screen.
-const topbar = (right, home = false, playing = false) => `
-  <header class="topbar">
+// Setup shows everything; a game keeps only the logo and the round; the final screen keeps the logo and Stats.
+const topbar = ({ right = "", home = false, version = true, theme = true, stats = true } = {}) => `
+  <header class="topbar ${home ? "home" : ""}">
     <div class="brand ${home ? "home" : ""}">
       ${home ? `<h1 class="marquee-text logo home">Song Quiz</h1>` : `<span class="marquee-text logo">Song Quiz</span>`}
-      ${playing ? "" : `<span class="ver" title="Version">${APP_VERSION}</span>`}
+      ${version ? `<span class="ver" title="Version">${APP_VERSION}</span>` : ""}
     </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      ${right || ""}
-      ${playing ? "" : `<div class="theme-menu" id="theme-menu">
+    <div class="tools">
+      ${right}
+      ${!theme ? "" : `<div class="theme-menu" id="theme-menu">
         <button class="small-btn" id="theme-btn" aria-label="Theme" aria-expanded="false" aria-controls="theme-panel">${icon("palette")}</button>
         <div class="theme-panel" id="theme-panel">
           <div class="theme-card">
@@ -1483,8 +1489,8 @@ const topbar = (right, home = false, playing = false) => `
                 </button>`).join("")}</div>`).join("")}
           </div>
         </div>
-      </div>
-      <button class="small-btn" data-open-stats>${icon("stats")} Stats</button>`}
+      </div>`}
+      ${stats ? `<button class="small-btn" data-open-stats>${icon("stats")} Stats</button>` : ""}
     </div>
   </header>`;
 
@@ -1534,7 +1540,7 @@ function renderSetup(errorText = "") {
   const artistPicked = settings.choice.type === "artist";
 
   app.innerHTML = `
-    ${topbar("", true)}
+    ${topbar({ home: true })}
 
     <section class="block">
       <h2 class="section-title">Who's playing</h2>
@@ -1987,11 +1993,12 @@ function renderTurn({ auto = false } = {}) {
   let replaysLeft = REPLAYS;
   let played = false;
   let firstPlayAt = 0;
+  let answerOpenedAt = 0;   // when they could first answer: the clip ended, or they tapped the mic early
   let locked = false;
   let answering = false, answerTimer = 0, micBlocked = false;
 
   app.innerHTML = `
-    ${topbar(`<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, false, true)}
+    ${topbar({ right: `<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, version: false, theme: false, stats: false })}
     <div class="board" id="board">${leaderboard()}</div>
 
     <section class="turn-head" style="--pc:${player.color}">
@@ -2059,6 +2066,7 @@ function renderTurn({ auto = false } = {}) {
   updateReplays();
 
   function startAnswerTimer() {
+    if (!answerOpenedAt) answerOpenedAt = performance.now();
     answering = true;
     clipBtn.classList.add("answering");
     const total = ANSWER_SECONDS * 1000, endAt = performance.now() + total;
@@ -2141,12 +2149,13 @@ function renderTurn({ auto = false } = {}) {
     stopClip();
     updateReplays();
     if (!quiet) Sfx.listen();
+    if (!answerOpenedAt) answerOpenedAt = performance.now();
     mic.classList.add("listening");
     status.textContent = `Listening… say ${ask}.`;
-    let heardSomething = false;
+    let heardSomething = false, spokeAt = 0;
     Voice.listen({
-      onText: text => { status.innerHTML = `Heard: <b>${esc(text)}</b>`; },
-      onDone: alternatives => { heardSomething = true; handleHeard(alternatives); },
+      onText: text => { if (!spokeAt) spokeAt = performance.now(); status.innerHTML = `Heard: <b>${esc(text)}</b>`; },
+      onDone: alternatives => { heardSomething = true; handleHeard(alternatives, spokeAt || performance.now()); },
       onError: (message, code) => {
         if (code === "no-speech" && answering) return;   // silence: just keep listening
         if (code !== "no-speech") micBlocked = true;
@@ -2164,13 +2173,14 @@ function renderTurn({ auto = false } = {}) {
   }
 
   // Answers first, so a song actually called "Play It Again" still counts.
-  function handleHeard(texts) {
+  // `at` is when they started answering (first words heard, or the moment a typed answer was sent).
+  function handleHeard(texts, at = performance.now()) {
     const result = Matcher.checkBoth(texts, song.title, song.artist);
-    if (result.title || result.artist) return judge(result, texts[0]);
+    if (result.title || result.artist) return judge(result, texts[0], false, false, at);
     const said = texts.map(t => t.trim().replace(/[.!?]+$/, ""));
     if (said.some(t => COMMANDS.skip.test(t))) return skip();
     if (said.some(t => COMMANDS.again.test(t))) return replay();
-    judge(result, texts[0]);
+    judge(result, texts[0], false, false, at);
   }
 
   function skip() {
@@ -2178,12 +2188,13 @@ function renderTurn({ auto = false } = {}) {
     judge({ title: false, artist: false }, "", true);
   }
 
-  function judge(result, heard, skipped = false, timedOut = false) {
+  function judge(result, heard, skipped = false, timedOut = false, at = performance.now()) {
     if (locked) return;
     locked = true;
     stopAnswerTimer();
     stopClip();
-    const ms = firstPlayAt && !skipped && !timedOut ? performance.now() - firstPlayAt : 0;
+    // Guess time: from when they could answer to when they started saying it.
+    const ms = heard && !skipped && !timedOut ? Math.max(0, at - (answerOpenedAt || firstPlayAt || at)) : 0;
     const titleRight = Boolean(result.title), artistRight = Boolean(result.artist);
     const earned = (titleRight ? titlePts : 0) + (!artistMode && artistRight ? pts : 0);
     const before = player.score;
@@ -2244,6 +2255,7 @@ function showResult(song, r) {
   box.className = "result";
   box.innerHTML = `
     <div class="earned ${r.earned ? "" : "zero"}">${r.earned ? `+${r.earned} for ${esc(player.name)}` : r.skipped ? "Skipped" : r.timedOut ? "Time's up" : "No points this time"}</div>
+    ${r.ms ? `<p class="guess-time">${r.earned ? "Guessed" : "Answered"} in ${(r.ms / 1000).toFixed(1)}s</p>` : ""}
     <div class="song">
       ${song.cover ? `<img src="${esc(song.cover)}" alt="" width="80" height="80">` : ""}
       <div class="meta">
@@ -2328,7 +2340,7 @@ function renderFinal() {
   const headline = winners.length > 1 ? "It's a tie!" : `${winners[0]} wins!`;
 
   app.innerHTML = `
-    ${topbar(`<span class="round-pill">Game over</span>`)}
+    ${topbar({ version: false, theme: false })}
     <section class="turn-head">
       <span class="round-pill">Final scores</span>
       <h1 class="marquee-text" style="font-size:clamp(34px,10vw,54px)">${esc(headline)}</h1>
