@@ -529,7 +529,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v11";
+const APP_VERSION = "v12";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1128,7 +1128,6 @@ const StatsStore = (() => {
 const Rules = {
   rounds: 5,
   pointsPerPart: 10,
-  minPool: 12,
   pointsFor(round) { return this.pointsPerPart * (round === this.rounds ? 2 : 1); },
 };
 
@@ -1857,15 +1856,17 @@ async function startGame() {
   let pool;
   try {
     pool = await SongSource.getPool(choice, {
-      need: Math.max(need, Rules.minPool),
+      need,
       onProgress: (n, total) => { const m = document.getElementById("load-msg"); if (m) m.textContent = `Finding your songs… ${n} of ${total}`; },
     });
   } catch (err) {
     renderSetup(err.message);
     return;
   }
-  if (pool.length < Rules.minPool) {
-    renderSetup(`Only found ${pool.length} playable songs for ${what}. Try a different pick.`);
+  // One song per turn, so every turn gets a different song.
+  if (pool.length < need) {
+    const people = settings.players.length;
+    renderSetup(`Only found ${pool.length} playable song${pool.length === 1 ? "" : "s"} in ${what}, and ${people} player${people === 1 ? "" : "s"} need ${need} (${Rules.rounds} each). Pick something bigger or play with fewer people.`);
     return;
   }
 
