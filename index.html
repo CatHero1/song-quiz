@@ -397,6 +397,10 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 }
 .disc .count { font-family: var(--font-marquee); font-size: clamp(40px, 13vw, 58px); line-height: 1; color: var(--text); text-shadow: 3px 3px 0 var(--a1); font-variant-numeric: tabular-nums; }
 .disc img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.disc .answer-count { display: flex; flex-direction: column; align-items: center; }
+.disc .count-label { margin-top: 4px; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.answering .disc { border-color: var(--a2); }
+.next-in { margin: 0; text-align: center; color: var(--muted); font-weight: 600; font-size: 15px; }
 .disc .play { display: flex; flex-direction: column; align-items: center; gap: 4px; font-weight: 700; letter-spacing: .08em; font-size: 14px; color: var(--muted); }
 .disc .play svg { width: 46px; height: 46px; fill: var(--a1); stroke: none; }
 .playing .disc { border-color: var(--a1); box-shadow: 0 6px 0 color-mix(in srgb, var(--a1) 70%, #000), 0 0 44px color-mix(in srgb, var(--a1) 40%, transparent); }
@@ -525,7 +529,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v9";
+const APP_VERSION = "v10";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1061,7 +1065,7 @@ const Voice = (() => {
       if (result.isFinal) onDone(Array.from(result, alt => alt.transcript.trim()).filter(Boolean));
       else onText(result[0].transcript);
     };
-    r.onerror = e => { if (e.error !== "aborted") onError(problems[e.error] || "Voice stopped working. Type your answer instead."); };
+    r.onerror = e => { if (e.error !== "aborted") onError(problems[e.error] || "Voice stopped working. Type your answer instead.", e.error); };
     r.onend = () => { active = null; onEnd(); };
     try { r.start(); } catch (_) { active = null; onError("Couldn't start the microphone. Type your answer instead."); onEnd(); }
   }
@@ -1312,6 +1316,7 @@ const Sfx = (() => {
     wrong() { tone(233, 0, 0.32, { type: "sawtooth", gain: 0.09, slideTo: 150 }); tone(175, 0.2, 0.42, { type: "sawtooth", gain: 0.08, slideTo: 110 }); },
     bonus() { seq([523, 659, 784, 659, 784, 1047], 0.09, { gain: 0.18 }); tone(1568, 0.55, 0.4, { type: "sine", gain: 0.12 }); },
     count() { tone(1760, 0, 0.035, { type: "square", gain: 0.03 }); },
+    countdown(n) { tone(n === 1 ? 988 : 659, 0, 0.18, { type: "sine", gain: 0.22 }); },
     win() { seq([523, 523, 523, 659, 784, 659, 784, 1047], 0.13, { gain: 0.18 }); },
   };
 })();
@@ -1386,6 +1391,24 @@ function saveSettings() {
 }
 
 let game = null;
+
+// Timers that belong to the current screen; cleared whenever the screen changes.
+const turnTimers = new Set();
+function later(fn, ms) { const id = setTimeout(() => { turnTimers.delete(id); fn(); }, ms); turnTimers.add(id); return id; }
+function every(fn, ms) { const id = setInterval(fn, ms); turnTimers.add(id); return id; }
+function clearTurnTimers() { turnTimers.forEach(id => clearTimeout(id)); turnTimers.clear(); autoToken++; }
+let autoToken = 0;
+
+// Keeps the screen on during a game, since nobody touches the phone between turns.
+const ScreenAwake = (() => {
+  let lock = null, wanted = false;
+  const grab = async () => { try { lock = navigator.wakeLock ? await navigator.wakeLock.request("screen") : null; } catch (_) { lock = null; } };
+  document.addEventListener("visibilitychange", () => { if (wanted && document.visibilityState === "visible") grab(); });
+  return {
+    on() { wanted = true; grab(); },
+    off() { wanted = false; if (lock) lock.release().catch(() => {}); lock = null; },
+  };
+})();
 let clipFrame = 0;
 
 function esc(s) {
@@ -1469,6 +1492,8 @@ document.addEventListener("keydown", e => {
 /* ---------- Setup ---------- */
 function renderSetup(errorText = "") {
   stopClip();
+  clearTurnTimers();
+  ScreenAwake.off();
   applyAccent();
   const choice = (group, id, label, current) =>
     `<button class="tile" data-${group}="${id}" aria-pressed="${id === current}"><span>${esc(label)}</span></button>`;
@@ -1844,6 +1869,7 @@ async function startGame() {
     return;
   }
 
+  ScreenAwake.on();
   const players = settings.players.map((name, i) => ({ name, score: 0, color: playerColor(i) }));
   game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist",
            queue: buildQueue(pool, players.length * Rules.rounds) };
@@ -1895,13 +1921,15 @@ function rollScore(index, from, to) {
 
 /* ---------- Turn ---------- */
 const REPLAYS = 2;
+const ANSWER_SECONDS = 15;   // per listen, so up to 45 seconds with both replays
 const COMMANDS = {
   skip: /^(skip|skip it|pass|next|i don'?t know|no idea|give up)$/i,
   again: /^(play (it|that)? ?again|again|repeat|replay|one more time|play it one more time)$/i,
 };
 
-function renderTurn() {
+function renderTurn({ auto = false } = {}) {
   stopClip();
+  clearTurnTimers();
   const player = game.players[game.turn];
   const song = game.queue[(game.round - 1) * game.players.length + game.turn];
   const pts = Rules.pointsFor(game.round);
@@ -1914,6 +1942,7 @@ function renderTurn() {
   let played = false;
   let firstPlayAt = 0;
   let locked = false;
+  let answering = false, answerTimer = 0, micBlocked = false;
 
   app.innerHTML = `
     ${topbar(`<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, false, true)}
@@ -1983,8 +2012,37 @@ function renderTurn() {
   idleDisc("PLAY CLIP");
   updateReplays();
 
+  function startAnswerTimer() {
+    answering = true;
+    clipBtn.classList.add("answering");
+    const total = ANSWER_SECONDS * 1000, endAt = performance.now() + total;
+    let shown = -1;
+    answerTimer = every(() => {
+      const left = Math.max(0, endAt - performance.now());
+      ringBar.setAttribute("stroke-dashoffset", String(100 - (left / total) * 100));
+      const secs = Math.ceil(left / 1000);
+      if (secs !== shown) {
+        shown = secs;
+        disc.innerHTML = `<span class="answer-count"><span class="count">${secs}</span><span class="count-label">to answer</span></span>`;
+        if (secs > 0 && secs <= 3) Sfx.tick();
+      }
+      if (left <= 0) timeUp();
+    }, 100);
+  }
+  function stopAnswerTimer() {
+    answering = false;
+    clearInterval(answerTimer);
+    clipBtn.classList.remove("answering");
+  }
+  function timeUp() {
+    stopAnswerTimer();
+    Voice.stop();
+    judge({ title: false, artist: false }, "", false, true);
+  }
+
   function play() {
     if (clipBusy()) return;
+    stopAnswerTimer();
     stopClip();
     starting = true;
     updateReplays();
@@ -2010,9 +2068,8 @@ function renderTurn() {
         }
         if (t >= settings.clip || audio.ended) {
           stopClip();
-          idleDisc(replaysLeft ? "REPLAY" : "NO REPLAYS");
           updateReplays();
-          if (!locked) listen();
+          if (!locked) { startAnswerTimer(); listen(); }
         } else clipFrame = requestAnimationFrame(tick);
       };
       clipFrame = requestAnimationFrame(tick);
@@ -2034,20 +2091,26 @@ function renderTurn() {
     play();
   }
 
-  function listen() {
+  function listen(quiet = false) {
     if (!Voice.supported || locked) return;
     stopClip();
     updateReplays();
-    Sfx.listen();
+    if (!quiet) Sfx.listen();
     mic.classList.add("listening");
     status.textContent = `Listening… say ${ask}.`;
     let heardSomething = false;
     Voice.listen({
       onText: text => { status.innerHTML = `Heard: <b>${esc(text)}</b>`; },
       onDone: alternatives => { heardSomething = true; handleHeard(alternatives); },
-      onError: message => { status.textContent = message; },
+      onError: (message, code) => {
+        if (code === "no-speech" && answering) return;   // silence: just keep listening
+        if (code !== "no-speech") micBlocked = true;
+        status.textContent = message;
+      },
       onEnd: () => {
         mic.classList.remove("listening");
+        // The browser stops listening after a pause; reopen quietly while there's time to answer.
+        if (!heardSomething && !locked && answering && !micBlocked) { later(() => { if (answering && !locked) listen(true); }, 200); return; }
         if (!heardSomething && !locked && /^Listening|^Heard/.test(status.textContent)) {
           status.textContent = "Didn't catch that. Tap the mic to answer, or type below.";
         }
@@ -2070,11 +2133,12 @@ function renderTurn() {
     judge({ title: false, artist: false }, "", true);
   }
 
-  function judge(result, heard, skipped = false) {
+  function judge(result, heard, skipped = false, timedOut = false) {
     if (locked) return;
     locked = true;
+    stopAnswerTimer();
     stopClip();
-    const ms = firstPlayAt && !skipped ? performance.now() - firstPlayAt : 0;
+    const ms = firstPlayAt && !skipped && !timedOut ? performance.now() - firstPlayAt : 0;
     const titleRight = Boolean(result.title), artistRight = Boolean(result.artist);
     const earned = (titleRight ? titlePts : 0) + (!artistMode && artistRight ? pts : 0);
     const before = player.score;
@@ -2086,7 +2150,7 @@ function renderTurn() {
     else Sfx.wrong();
     if (!fullyRight) {
       const answer = artistMode ? `The song was ${song.title}.` : `The song was ${song.title}, by ${song.artist}.`;
-      setTimeout(() => { if (document.getElementById("result")) Announcer.say(answer); }, 700);
+      later(() => Announcer.say(answer), 700);
     }
 
     document.getElementById("answer").hidden = true;
@@ -2095,8 +2159,8 @@ function renderTurn() {
     if (song.cover) disc.innerHTML = `<img src="${esc(song.cover)}" alt="">`;
     updateReplays();
     skipBtn.disabled = true;
-    showResult(song, { titleRight, artistRight, result, heard, skipped, earned, ms, worth: { title: titlePts, artist: artistMode ? 0 : pts } });
-    if (earned) setTimeout(() => rollScore(game.turn, before, player.score), 350);
+    showResult(song, { titleRight, artistRight, result, heard, skipped, timedOut, earned, ms, worth: { title: titlePts, artist: artistMode ? 0 : pts } });
+    if (earned) later(() => rollScore(game.turn, before, player.score), 350);
   }
 
   clipBtn.onclick = () => { if (clipBusy()) return; if (!played) play(); else replay(); };
@@ -2106,7 +2170,7 @@ function renderTurn() {
     if (mic.classList.contains("listening")) {
       Voice.stop();
       mic.classList.remove("listening");
-      status.textContent = "Stopped. Tap the mic to answer.";
+      status.textContent = answering ? "Mic off. Tap it to answer, or type below." : "Stopped. Tap the mic to answer.";
     } else listen();
   };
   document.getElementById("type-form").onsubmit = e => {
@@ -2115,8 +2179,9 @@ function renderTurn() {
     if (text) handleHeard([text]);
   };
 
-  if (isFinal) Sfx.bonus(); else Sfx.turn();
-  setTimeout(play, isFinal ? 900 : 500);
+  // After the 3-2-1 countdown (auto) the turn chime is skipped; the short pause keeps chimes off the song's start.
+  if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
+  later(play, isFinal ? 1000 : 500);
 }
 
 function showResult(song, r) {
@@ -2133,7 +2198,7 @@ function showResult(song, r) {
   box.hidden = false;
   box.className = "result";
   box.innerHTML = `
-    <div class="earned ${r.earned ? "" : "zero"}">${r.earned ? `+${r.earned} for ${esc(player.name)}` : r.skipped ? "Skipped" : "No points this time"}</div>
+    <div class="earned ${r.earned ? "" : "zero"}">${r.earned ? `+${r.earned} for ${esc(player.name)}` : r.skipped ? "Skipped" : r.timedOut ? "Time's up" : "No points this time"}</div>
     <div class="song">
       ${song.cover ? `<img src="${esc(song.cover)}" alt="" width="80" height="80">` : ""}
       <div class="meta">
@@ -2153,6 +2218,7 @@ function showResult(song, r) {
         ${missed.map(part => `<button class="pill" data-count="${part}">${icon("check")} Count ${part === "title" ? "song" : "artist"}</button>`).join("")}
       </div>` : ""}
     <button class="cta" id="next">${nextName ? `Pass to ${esc(nextName)}` : "See final scores"}</button>
+    <p class="next-in" id="next-in" aria-live="polite"></p>
   `;
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // For when the mic mishears a name (e.g. "Laufey" as "lady"): the group can count it.
@@ -2168,19 +2234,48 @@ function showResult(song, r) {
     showResult(song, r);
     rollScore(game.turn, before, player.score);
   });
-  document.getElementById("next").onclick = () => {
-    primeAudio();
+  const go = auto => {
+    autoToken++;
     StatsStore.recordTurn(player.name, game.artistMode ? [r.titleRight] : [r.titleRight, r.artistRight], r.ms);
     if (!nextName) return renderFinal();
     if (lastTurn) { game.round += 1; game.turn = 0; } else { game.turn += 1; }
     window.scrollTo({ top: 0, behavior: "smooth" });
-    renderTurn();
+    renderTurn({ auto });
   };
+  document.getElementById("next").onclick = () => { primeAudio(); go(false); };
+
+  // Moves on by itself: wait for the answer to be read out, 3 seconds, then 3-2-1 chimes.
+  const token = ++autoToken;
+  const label = document.getElementById("next-in");
+  const alive = () => token === autoToken;
+  const wait = ms => new Promise(done => later(done, ms));
+  const show = text => {
+    label.innerHTML = `${text} · <button class="link-btn" id="pause-next">Pause</button>`;
+    document.getElementById("pause-next").onclick = () => { autoToken++; label.textContent = "Paused. Tap the button when you're ready."; };
+  };
+  (async () => {
+    show(nextName ? `${esc(nextName)}'s turn is coming up` : "Final scores coming up");
+    await wait(900);
+    while (alive() && window.speechSynthesis && speechSynthesis.speaking) await wait(200);
+    await wait(3000);
+    if (!alive()) return;
+    if (nextName) {
+      for (const n of [3, 2, 1]) {
+        if (!alive()) return;
+        show(`${esc(nextName)} in ${n}`);
+        Sfx.countdown(n);
+        await wait(1000);
+      }
+    }
+    if (alive()) go(true);
+  })();
 }
 
 /* ---------- Final ---------- */
 function renderFinal() {
   stopClip();
+  clearTurnTimers();
+  ScreenAwake.off();
   const ranked = game.players.slice().sort((a, b) => b.score - a.score);
   const top = ranked[0].score;
   const winners = ranked.filter(p => p.score === top).map(p => p.name);
