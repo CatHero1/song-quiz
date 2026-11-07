@@ -525,7 +525,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v8";
+const APP_VERSION = "v9";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1405,15 +1405,16 @@ function stopClip() {
   if (btn) btn.classList.remove("playing");
 }
 
-const topbar = (right, home = false) => `
+// In a game (`playing`), the bar keeps only the logo and the round; theme, version and stats wait for setup and the final screen.
+const topbar = (right, home = false, playing = false) => `
   <header class="topbar">
     <div class="brand ${home ? "home" : ""}">
       ${home ? `<h1 class="marquee-text logo home">Song Quiz</h1>` : `<span class="marquee-text logo">Song Quiz</span>`}
-      <span class="ver" title="Version">${APP_VERSION}</span>
+      ${playing ? "" : `<span class="ver" title="Version">${APP_VERSION}</span>`}
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       ${right || ""}
-      <div class="theme-menu" id="theme-menu">
+      ${playing ? "" : `<div class="theme-menu" id="theme-menu">
         <button class="small-btn" id="theme-btn" aria-label="Theme" aria-expanded="false" aria-controls="theme-panel">${icon("palette")}</button>
         <div class="theme-panel" id="theme-panel">
           <div class="theme-card">
@@ -1426,7 +1427,7 @@ const topbar = (right, home = false) => `
           </div>
         </div>
       </div>
-      <button class="small-btn" data-open-stats>${icon("stats")} Stats</button>
+      <button class="small-btn" data-open-stats>${icon("stats")} Stats</button>`}
     </div>
   </header>`;
 
@@ -1434,6 +1435,7 @@ function wireTopbar() {
   app.querySelectorAll("[data-open-stats]").forEach(b => b.onclick = () => openStats());
   const menu = document.getElementById("theme-menu");
   const btn = document.getElementById("theme-btn");
+  if (!menu) return;
   btn.onclick = () => {
     const open = !menu.classList.contains("open");
     menu.classList.toggle("open", open);
@@ -1914,7 +1916,7 @@ function renderTurn() {
   let locked = false;
 
   app.innerHTML = `
-    ${topbar(`<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`)}
+    ${topbar(`<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, false, true)}
     <div class="board" id="board">${leaderboard()}</div>
 
     <section class="turn-head" style="--pc:${player.color}">
@@ -1971,21 +1973,29 @@ function renderTurn() {
     disc.innerHTML = `<span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>${label}</span>`;
     ringBar.setAttribute("stroke-dashoffset", "0");
   };
+  // A clip is busy from the tap until it ends; taps in between must not spend replays.
+  let starting = false;
+  const clipBusy = () => starting || clipBtn.classList.contains("playing");
   const updateReplays = () => {
     document.getElementById("replays").textContent = replaysLeft;
-    againBtn.disabled = locked || replaysLeft === 0 || !played;
+    againBtn.disabled = locked || replaysLeft === 0 || !played || clipBusy();
   };
   idleDisc("PLAY CLIP");
   updateReplays();
 
   function play() {
+    if (clipBusy()) return;
     stopClip();
+    starting = true;
+    updateReplays();
     audio.src = song.preview;
     audio.currentTime = 0;
     audio.play().then(() => {
+      starting = false;
       document.getElementById("audio-error").hidden = true;
-      if (!played) { played = true; firstPlayAt = performance.now(); updateReplays(); }
+      if (!played) { played = true; firstPlayAt = performance.now(); }
       clipBtn.classList.add("playing");
+      updateReplays();
       Viz.start();
       status.textContent = Voice.supported ? "Listen… the mic opens when the clip ends." : "Listen, then type your answer below.";
       let shown = -1;
@@ -2001,11 +2011,14 @@ function renderTurn() {
         if (t >= settings.clip || audio.ended) {
           stopClip();
           idleDisc(replaysLeft ? "REPLAY" : "NO REPLAYS");
+          updateReplays();
           if (!locked) listen();
         } else clipFrame = requestAnimationFrame(tick);
       };
       clipFrame = requestAnimationFrame(tick);
     }).catch(() => {
+      starting = false;
+      updateReplays();
       idleDisc("PLAY CLIP");
       const msg = document.getElementById("audio-error");
       msg.hidden = false;
@@ -2014,7 +2027,7 @@ function renderTurn() {
   }
 
   function replay() {
-    if (locked || !played) return;
+    if (locked || !played || clipBusy()) return;
     if (replaysLeft === 0) { status.textContent = `No replays left. Say ${ask}.`; listen(); return; }
     replaysLeft--;
     updateReplays();
@@ -2024,6 +2037,7 @@ function renderTurn() {
   function listen() {
     if (!Voice.supported || locked) return;
     stopClip();
+    updateReplays();
     Sfx.listen();
     mic.classList.add("listening");
     status.textContent = `Listening… say ${ask}.`;
@@ -2085,7 +2099,7 @@ function renderTurn() {
     if (earned) setTimeout(() => rollScore(game.turn, before, player.score), 350);
   }
 
-  clipBtn.onclick = () => { if (!played) play(); else replay(); };
+  clipBtn.onclick = () => { if (clipBusy()) return; if (!played) play(); else replay(); };
   againBtn.onclick = replay;
   skipBtn.onclick = skip;
   mic.onclick = () => {
