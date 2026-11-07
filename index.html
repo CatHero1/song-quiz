@@ -428,6 +428,19 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 
 /* Play again / Skip */
 .pills { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.vol { display: flex; align-items: center; gap: 10px; width: min(260px, 100%); color: var(--muted); }
+.vol .ico { width: 20px; height: 20px; }
+.vol input {
+  -webkit-appearance: none; appearance: none; flex: 1; min-width: 0; height: 6px; margin: 0; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(90deg, var(--a1) var(--v), var(--edge) var(--v));
+}
+.vol input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--card); border: 3px solid var(--a1); box-shadow: 0 2px 4px rgba(0,0,0,.2); }
+.vol input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--card); border: 3px solid var(--a1); }
+.vol input:focus-visible { outline: 3px solid var(--brand); outline-offset: 4px; }
+.get-ready { display: grid; place-items: center; gap: 10px; padding: 60px 0; text-align: center; }
+.get-ready .big { font-family: var(--font-marquee); font-size: clamp(90px, 30vw, 140px); line-height: 1; color: var(--text); text-shadow: 6px 6px 0 var(--a1); }
+.get-ready .big.pop { animation: count-pop .5s ease-out; }
+@keyframes count-pop { 0% { transform: scale(1.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .pill {
   display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px;
   background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 4px 0 var(--edge-deep);
@@ -549,7 +562,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v15";
+const APP_VERSION = "v16";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1206,6 +1219,8 @@ const ICONS = {
   country: '<path d="M3 15c3 3 15 3 18 0M7 15c0-5 1-9 3-9 1 0 1.5 1 2 1s1-1 2-1c2 0 3 4 3 9"/>',
   dance: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
   latin: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  volume: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  mute: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>',
   skip: '<path d="M5 4l10 8-10 8z"/><path d="M19 5v14"/>',
@@ -1424,6 +1439,9 @@ if (settings.choice && (settings.choice.type === "liked" || settings.choice.type
 }
 if (!validChoice(settings.choice)) settings.choice = { type: "category", id: "top" };
 if (typeof settings.wellKnown !== "boolean") settings.wellKnown = true;
+if (!(settings.volume >= 0 && settings.volume <= 1)) settings.volume = 1;
+// iPhones and iPads ignore volume set by a page (only their side buttons work), so the slider is hidden there.
+const volumeWorks = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (_) { return false; } })();
 if (!THEMES.some(t => t.id === settings.look)) settings.look = "sky";
 
 function saveSettings() {
@@ -1925,7 +1943,21 @@ async function startGame() {
   const players = settings.players.map((name, i) => ({ name, score: 0, color: playerColor(i) }));
   game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist",
            queue: buildQueue(pool, players.length * Rules.rounds) };
-  renderTurn();
+
+  // Get ready: 3-2-1 chimes, then the first turn starts with its half-second pause.
+  app.innerHTML = `
+    <div class="get-ready">
+      <span class="round-pill">${esc(players[0].name)} is up first</span>
+      <span class="big" id="go-count" aria-live="polite">3</span>
+    </div>`;
+  const count = document.getElementById("go-count");
+  for (const n of [3, 2, 1]) {
+    count.textContent = n;
+    count.classList.remove("pop"); void count.offsetWidth; count.classList.add("pop");
+    Sfx.countdown(n);
+    await new Promise(done => later(done, 1000));
+  }
+  renderTurn({ auto: true });
 }
 
 /* ---------- Leaderboard ---------- */
@@ -2023,6 +2055,11 @@ function renderTurn({ auto = false } = {}) {
         <button class="pill" id="again">${icon("replay")} Play again <span class="count-badge" id="replays">${REPLAYS}</span></button>
         <button class="pill" id="skip">${icon("skip")} Skip</button>
       </div>
+      ${volumeWorks ? `
+        <label class="vol" for="vol">
+          <span id="vol-icon">${icon(settings.volume ? "volume" : "mute")}</span>
+          <input type="range" id="vol" min="0" max="100" step="1" value="${Math.round(settings.volume * 100)}" aria-label="Clip volume" style="--v:${Math.round(settings.volume * 100)}%">
+        </label>` : ""}
     </div>
 
     <section class="answer" id="answer">
@@ -2101,6 +2138,7 @@ function renderTurn({ auto = false } = {}) {
     starting = true;
     updateReplays();
     audio.src = song.preview;
+    audio.volume = settings.volume;
     audio.currentTime = 0;
     audio.play().then(() => {
       starting = false;
@@ -2234,6 +2272,17 @@ function renderTurn({ auto = false } = {}) {
     const text = typed.value.trim();
     if (text) handleHeard([text]);
   };
+
+  const vol = document.getElementById("vol");
+  if (vol) {
+    vol.oninput = () => {
+      settings.volume = Number(vol.value) / 100;
+      audio.volume = settings.volume;
+      vol.style.setProperty("--v", `${vol.value}%`);
+      document.getElementById("vol-icon").innerHTML = icon(settings.volume ? "volume" : "mute");
+    };
+    vol.onchange = saveSettings;
+  }
 
   // After the 3-2-1 countdown (auto) the turn chime is skipped; the short pause keeps chimes off the song's start.
   if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
