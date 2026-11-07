@@ -444,7 +444,8 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
   background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 4px 0 var(--edge-deep);
 }
 .send:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--edge-deep); }
-.overrule { align-self: center; font-size: 15px; }
+.overrule { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; }
+.overrule .pill { font-size: 15px; }
 .verdicts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .verdicts li { display: flex; gap: 8px; align-items: center; font-size: 16px; overflow-wrap: anywhere; }
 .verdicts li.ok .ico { color: var(--right); }
@@ -524,7 +525,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v7";
+const APP_VERSION = "v8";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2080,7 +2081,7 @@ function renderTurn() {
     if (song.cover) disc.innerHTML = `<img src="${esc(song.cover)}" alt="">`;
     updateReplays();
     skipBtn.disabled = true;
-    showResult(song, { titleRight, artistRight, result, heard, skipped, earned, ms, full: titlePts + (artistMode ? 0 : pts) });
+    showResult(song, { titleRight, artistRight, result, heard, skipped, earned, ms, worth: { title: titlePts, artist: artistMode ? 0 : pts } });
     if (earned) setTimeout(() => rollScore(game.turn, before, player.score), 350);
   }
 
@@ -2111,7 +2112,8 @@ function showResult(song, r) {
   const nextName = lastTurn ? (lastRound ? null : game.players[0].name) : game.players[game.turn + 1].name;
   const line = (label, ok, verdict, answer) =>
     `<li class="${ok ? "ok" : "no"}">${icon(ok ? "check" : "cross")}<span><b>${label}</b> ${ok ? (verdict === "exact" ? "Nailed it" : verdict === "counted" ? "Counted" : "Close enough") : r.skipped ? "Skipped" : "Missed"}${ok && verdict === "exact" ? "" : ` · ${esc(answer)}`}</span></li>`;
-  const canOverrule = !r.skipped && r.heard && r.earned < r.full;
+  // Only the parts that were missed can be counted, so a misheard artist gives just the artist's points.
+  const missed = r.skipped || !r.heard ? [] : ["title", "artist"].filter(part => r.worth[part] && !r[`${part}Right`]);
 
   const box = document.getElementById("result");
   box.hidden = false;
@@ -2131,23 +2133,27 @@ function showResult(song, r) {
       ${game.artistMode ? "" : line("Artist", r.artistRight, r.result.artist, song.artist)}
     </ul>
     ${r.heard ? `<p class="hint">You said: “${esc(r.heard)}”</p>` : ""}
-    ${canOverrule ? `<button class="pill overrule" id="overrule">${icon("check")} Heard me wrong? Count it</button>` : ""}
+    ${missed.length ? `
+      <div class="overrule">
+        <span class="hint">Mic heard it wrong?</span>
+        ${missed.map(part => `<button class="pill" data-count="${part}">${icon("check")} Count ${part === "title" ? "song" : "artist"}</button>`).join("")}
+      </div>` : ""}
     <button class="cta" id="next">${nextName ? `Pass to ${esc(nextName)}` : "See final scores"}</button>
   `;
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
   // For when the mic mishears a name (e.g. "Laufey" as "lady"): the group can count it.
-  if (canOverrule) document.getElementById("overrule").onclick = () => {
+  box.querySelectorAll("[data-count]").forEach(b => b.onclick = () => {
+    const part = b.dataset.count;
     Announcer.stop();
     const before = player.score;
-    player.score += r.full - r.earned;
-    r.earned = r.full;
-    r.titleRight = true;
-    if (!game.artistMode) r.artistRight = true;
-    r.result = { title: r.result.title || "counted", artist: r.result.artist || "counted" };
+    player.score += r.worth[part];
+    r.earned += r.worth[part];
+    r[`${part}Right`] = true;
+    r.result = { ...r.result, [part]: "counted" };
     Sfx.right();
     showResult(song, r);
     rollScore(game.turn, before, player.score);
-  };
+  });
   document.getElementById("next").onclick = () => {
     primeAudio();
     StatsStore.recordTurn(player.name, game.artistMode ? [r.titleRight] : [r.titleRight, r.artistRight], r.ms);
