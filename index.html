@@ -529,7 +529,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v10";
+const APP_VERSION = "v11";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2064,7 +2064,6 @@ function renderTurn({ auto = false } = {}) {
         if (secs !== shown) {
           shown = secs;
           disc.innerHTML = `<span class="count">${secs}</span>`;
-          if (secs > 0 && secs <= 3) Sfx.tick();
         }
         if (t >= settings.clip || audio.ended) {
           stopClip();
