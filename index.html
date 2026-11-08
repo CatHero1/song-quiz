@@ -191,6 +191,9 @@
 .h-bar i { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--edge); }
 .h-bar.full i { display: none; }
 .h-times { width: 100%; display: flex; justify-content: space-between; margin-top: -4px; color: var(--muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.h-controls { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; }
+.h-step { justify-self: start; padding: 8px 14px; font-size: 15px; }
+.h-step .ico { width: 16px; height: 16px; }
 .h-play {
   width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center;
   background: var(--brand); color: var(--on-brand); border: var(--border-w) solid var(--brand-deep); box-shadow: 0 6px 0 var(--brand-deep);
@@ -209,6 +212,7 @@
 .h-list button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 10px; background: none; text-align: left; }
 .h-list button:hover, .h-list li[aria-selected="true"] button { background: var(--card-hi); }
 .h-list img, .h-noart { width: 36px; height: 36px; border-radius: 6px; flex: none; background: var(--card-hi); object-fit: cover; }
+.h-list .round { border-radius: 50%; }
 .h-txt { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
 .h-txt b, .h-txt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .h-txt span { color: var(--muted); font-size: 14px; }
@@ -613,7 +617,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v18";
+const APP_VERSION = "v19";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2476,6 +2480,8 @@ function showResult(song, r) {
 
 /* ---------- Heardle mode ---------- */
 // Same steps as Heardle: 1, 2, 4, 7, 11 and 16 seconds. Solving on the first step is worth 6 points, the last 1.
+// Naming the right artist (or a wrong song by the right artist) locks in half that step's points, rounded up;
+// the turn scores whichever is higher, the song or the artist.
 const HEARDLE_STEPS = [1, 2, 4, 7, 11, 16];
 const HEARDLE_SQUARES = { skip: "⬛", wrong: "🟥", artist: "🟨", right: "🟩", empty: "⬜" };
 
@@ -2487,6 +2493,7 @@ function renderHeardleTurn() {
   const tries = HEARDLE_STEPS.length, MAX = HEARDLE_STEPS[tries - 1], FULL = 30;
   const rows = [];            // { kind: "skip" | "wrong" | "artist" | "right", text }
   let step = 0, done = false, chosen = null, results = [], active = -1, searchTimer = 0, ticket = 0;
+  let artistPts = 0;         // locked in when they first name the right artist
 
   app.innerHTML = `
     ${topbar({ right: `<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, version: false, theme: false, stats: false })}
@@ -2506,18 +2513,22 @@ function renderHeardleTurn() {
         ${HEARDLE_STEPS.slice(0, -1).map(t => `<i style="left:${(t / MAX) * 100}%"></i>`).join("")}
       </div>
       <div class="h-times"><span id="h-pos">0:00</span><span id="h-max">0:${String(MAX).padStart(2, "0")}</span></div>
-      <button class="h-play" id="h-play" aria-label="Play the clip">${playIcon(false)}</button>
+      <div class="h-controls">
+        <span></span>
+        <button class="h-play" id="h-play" aria-label="Play the clip">${playIcon(false)}</button>
+        <button class="pill h-step" id="h-skip"></button>
+      </div>
       ${volumeControl()}
     </div>
 
     <section class="h-guess" id="h-guess">
       <div class="h-search">
         <ul class="h-list" id="h-list" role="listbox" hidden></ul>
-        <input class="typed" id="h-q" type="search" placeholder="Know it? Search for the song" autocomplete="off" autocapitalize="off" spellcheck="false"
+        <input class="typed" id="h-q" type="search" placeholder="${game.artistMode ? "Know it? Search for the song" : "Know it? Search for the song or artist"}" autocomplete="off" autocapitalize="off" spellcheck="false"
           role="combobox" aria-expanded="false" aria-controls="h-list" aria-autocomplete="list" aria-label="Search for the song">
       </div>
       <div class="h-actions">
-        <button class="pill" id="h-skip"></button>
+        <button class="pill" id="h-skip-song">Skip song</button>
         <button class="cta" id="h-submit" disabled>Submit</button>
       </div>
     </section>
@@ -2556,9 +2567,12 @@ function renderHeardleTurn() {
     unlocked.style.width = `${((done ? FULL : HEARDLE_STEPS[step]) / scale()) * 100}%`;
     bar.classList.toggle("full", done);
     document.getElementById("h-max").textContent = `0:${String(scale()).padStart(2, "0")}`;
+    skipBtn.hidden = done;
     if (!done) {
       const last = step === tries - 1;
-      skipBtn.innerHTML = last ? "Give up" : `Skip <b>+${HEARDLE_STEPS[step + 1] - HEARDLE_STEPS[step]}s</b>`;
+      const more = last ? 0 : HEARDLE_STEPS[step + 1] - HEARDLE_STEPS[step];
+      skipBtn.innerHTML = last ? "Give up" : `${icon("skip")} +${more}s`;
+      skipBtn.setAttribute("aria-label", last ? "Give up" : `Skip, unlock ${more} more second${more === 1 ? "" : "s"}`);
     }
   }
 
@@ -2602,8 +2616,11 @@ function renderHeardleTurn() {
     list.innerHTML = results.map((r, i) => `
       <li role="option" id="h-opt-${i}" aria-selected="${i === active}">
         <button type="button" data-pick="${i}" tabindex="-1">
-          ${r.cover ? `<img src="${esc(r.cover)}" alt="" width="36" height="36">` : `<span class="h-noart"></span>`}
-          <span class="h-txt"><b>${esc(r.title)}</b><span>${esc(r.artist)}</span></span>
+          ${r.kind === "artist"
+            ? `${r.picture ? `<img class="round" src="${esc(r.picture)}" alt="" width="36" height="36">` : `<span class="h-noart round"></span>`}
+               <span class="h-txt"><b>${esc(r.name)}</b><span>Artist</span></span>`
+            : `${r.cover ? `<img src="${esc(r.cover)}" alt="" width="36" height="36">` : `<span class="h-noart"></span>`}
+               <span class="h-txt"><b>${esc(r.title)}</b><span>${esc(r.artist)}</span></span>`}
         </button>
       </li>`).join("");
     list.hidden = false;
@@ -2616,16 +2633,22 @@ function renderHeardleTurn() {
   }
   function choose(r) {
     chosen = r;
-    input.value = `${r.title} – ${r.artist}`;
+    input.value = r.kind === "artist" ? r.name : `${r.title} – ${r.artist}`;
     submitBtn.disabled = false;
     closeList();
   }
   async function search(q) {
     const mine = ++ticket;
     try {
-      const found = await SongSource.searchSongs(q);
+      // Up to 2 matching artists first (not in artist games, where everyone knows it), then songs.
+      const [songs, artists] = await Promise.all([
+        SongSource.searchSongs(q),
+        game.artistMode ? [] : SongSource.searchArtists(q).catch(() => []),
+      ]);
       if (mine !== ticket || done) return;
-      results = found.slice(0, 6);
+      const lower = q.toLowerCase();
+      const artistHits = artists.filter(a => a && a.name && a.name.toLowerCase().includes(lower)).slice(0, 2);
+      results = [...artistHits.map(a => ({ kind: "artist", name: a.name, picture: a.picture })), ...songs.slice(0, 6 - artistHits.length)];
       active = -1;
       showResults();
     } catch (_) { /* a failed search just shows nothing */ }
@@ -2671,12 +2694,20 @@ function renderHeardleTurn() {
     input.value = "";
     submitBtn.disabled = true;
     closeList();
+    const creditArtist = () => { if (!artistPts) artistPts = Math.ceil((tries - step) / 2); };
+    if (pick.kind === "artist") {
+      const right = Matcher.sameArtist(pick.name, song.artist);
+      if (right) creditArtist();
+      rows.push({ kind: right ? "artist" : "wrong", text: right ? pick.name : `${pick.name} (artist)` });
+      return nextStep();
+    }
     if (pick.id === song.id || Matcher.sameSong(pick, song)) {
       rows.push({ kind: "right", text: `${pick.title} – ${pick.artist}` });
       drawRows();
       return finish(true);
     }
     const artistOnly = !game.artistMode && Matcher.sameArtist(pick.artist, song.artist);
+    if (artistOnly) creditArtist();
     rows.push({ kind: artistOnly ? "artist" : "wrong", text: `${pick.title} – ${pick.artist}` });
     nextStep();
   }
@@ -2684,7 +2715,9 @@ function renderHeardleTurn() {
   function finish(won) {
     done = true;
     stopPlaying();
-    const points = won ? tries - step : 0;
+    const songPts = won ? tries - step : 0;
+    const points = Math.max(songPts, artistPts);
+    const artistOnlyWin = !won && artistPts > 0;
     const before = player.score;
     player.score += points;
     StatsStore.recordTurn(player.name, [won], 0);
@@ -2692,13 +2725,13 @@ function renderHeardleTurn() {
     drawPlayer();
     if (won) Sfx.right();
     else {
-      Sfx.wrong();
+      if (artistOnlyWin) Sfx.partial(); else Sfx.wrong();
       later(() => Announcer.say(game.artistMode ? `The song was ${song.title}.` : `The song was ${song.title}, by ${song.artist}.`), 700);
     }
     if (points) later(() => rollScore(game.turn, before, player.score), 350);
 
     const squares = Array.from({ length: tries }, (_, i) => HEARDLE_SQUARES[rows[i] ? rows[i].kind : "empty"]).join("");
-    const shareText = `Song Quiz · Heardle\n🔊${squares}\n${won ? `Got it in ${HEARDLE_STEPS[step]}s` : "Didn't get it"}\ncathero1.github.io/song-quiz`;
+    const shareText = `Song Quiz · Heardle\n🔊${squares}\n${won ? `Got it in ${HEARDLE_STEPS[step]}s` : artistOnlyWin ? "Got the artist" : "Didn't get it"}\ncathero1.github.io/song-quiz`;
     const lastTurn = game.turn === game.players.length - 1;
     const nextName = lastTurn ? (game.round === Rules.rounds ? null : game.players[0].name) : game.players[game.turn + 1].name;
 
@@ -2707,7 +2740,8 @@ function renderHeardleTurn() {
     box.className = "result";
     box.innerHTML = `
       <div class="earned ${points ? "" : "zero"}">${points ? `+${points} for ${esc(player.name)}` : "Not this time"}</div>
-      ${won ? `<p class="guess-time">Got it in ${HEARDLE_STEPS[step]} second${HEARDLE_STEPS[step] === 1 ? "" : "s"}</p>` : ""}
+      ${won ? `<p class="guess-time">Got it in ${HEARDLE_STEPS[step]} second${HEARDLE_STEPS[step] === 1 ? "" : "s"}</p>`
+        : artistOnlyWin ? `<p class="guess-time">Got the artist</p>` : ""}
       <div class="song">
         ${song.cover ? `<img src="${esc(song.cover)}" alt="" width="80" height="80">` : ""}
         <div class="meta">
@@ -2750,6 +2784,7 @@ function renderHeardleTurn() {
 
   playBtn.onclick = play;
   skipBtn.onclick = skip;
+  document.getElementById("h-skip-song").onclick = () => { if (!done) { stopPlaying(); finish(false); } };
   submitBtn.onclick = guess;
   drawRows();
   drawPlayer();
