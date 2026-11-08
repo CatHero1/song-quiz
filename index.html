@@ -488,9 +488,9 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 .vol input::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--card); border: 3px solid var(--a1); box-shadow: 0 2px 4px rgba(0,0,0,.2); }
 .vol input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--card); border: 3px solid var(--a1); }
 .vol input:focus-visible { outline: 3px solid var(--brand); outline-offset: 4px; }
-.get-ready { display: grid; place-items: center; gap: 10px; padding: 60px 0; text-align: center; }
-.get-ready .big { font-family: var(--font-marquee); font-size: clamp(90px, 30vw, 140px); line-height: 1; color: var(--text); text-shadow: 6px 6px 0 var(--a1); }
-.get-ready .big.pop { animation: count-pop .5s ease-out; }
+.get-ready { min-height: 85vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+.get-ready .big { font-family: var(--font-marquee); font-size: clamp(110px, 38vw, 180px); line-height: 1; color: var(--text); text-shadow: 6px 6px 0 var(--a1); }
+.get-ready .big.tick-in { animation: count-pop .5s ease-out; }
 @keyframes count-pop { 0% { transform: scale(1.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
 .pill {
   display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px;
@@ -613,7 +613,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v17";
+const APP_VERSION = "v18";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1485,6 +1485,14 @@ const Announcer = (() => {
   };
 })();
 
+// Starts downloading a clip ahead of time (during a countdown) so it plays the moment it's needed.
+function preloadClip(song) {
+  if (!song || audio.src === song.preview) return;
+  audio.src = song.preview;
+  audio.preload = "auto";
+  audio.load();
+}
+
 function primeAudio() {
   Sfx.unlock();
   Announcer.unlock();
@@ -2048,11 +2056,13 @@ async function startGame() {
       <span class="big" id="go-count" aria-live="polite">3</span>
     </div>`;
   const count = document.getElementById("go-count");
+  preloadClip(game.queue[0]);
   for (const n of [3, 2, 1]) {
     count.textContent = n;
-    count.classList.remove("pop"); void count.offsetWidth; count.classList.add("pop");
+    count.classList.remove("tick-in"); void count.offsetWidth; count.classList.add("tick-in");
     Sfx.countdown(n);
-    await new Promise(done => later(done, 1000));
+    // Half a second after the "1" chime the clip starts, so the chime never covers the song.
+    await new Promise(done => later(done, n === 1 ? 500 : 1000));
   }
   renderTurn({ auto: true });
 }
@@ -2231,7 +2241,7 @@ function renderTurn({ auto = false } = {}) {
     stopClip();
     starting = true;
     updateReplays();
-    audio.src = song.preview;
+    if (audio.src !== song.preview) audio.src = song.preview;   // keep a clip preloaded during the countdown
     audio.volume = settings.volume;
     audio.currentTime = 0;
     audio.play().then(() => {
@@ -2369,9 +2379,10 @@ function renderTurn({ auto = false } = {}) {
 
   wireVolume();
 
-  // After the 3-2-1 countdown (auto) the turn chime is skipped; the short pause keeps chimes off the song's start.
+  // After a 3-2-1 countdown (auto) the pause already happened, so the clip starts right away.
+  // Otherwise a chime plays first, with a short gap so it doesn't cover the song's start.
   if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
-  later(play, isFinal ? 1000 : 500);
+  if (auto && !isFinal) play(); else later(play, isFinal ? 1000 : 500);
 }
 
 function showResult(song, r) {
@@ -2451,11 +2462,12 @@ function showResult(song, r) {
     await wait(3000);
     if (!alive()) return;
     if (nextName) {
+      preloadClip(game.queue[(game.round - 1) * game.players.length + game.turn + 1]);
       for (const n of [3, 2, 1]) {
         if (!alive()) return;
         show(`${esc(nextName)} in ${n}`);
         Sfx.countdown(n);
-        await wait(1000);
+        await wait(n === 1 ? 500 : 1000);
       }
     }
     if (alive()) go(true);
