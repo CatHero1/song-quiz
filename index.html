@@ -630,7 +630,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v20";
+const APP_VERSION = "v21";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2112,8 +2112,8 @@ async function startGame() {
     count.textContent = n;
     count.classList.remove("tick-in"); void count.offsetWidth; count.classList.add("tick-in");
     Sfx.countdown(n);
-    // Half a second after the "1" chime the clip starts, so the chime never covers the song.
-    await new Promise(done => later(done, n === 1 ? 500 : 1000));
+    // Each number shows for a full second; the clip starts as the "1" ends, well after its chime has faded.
+    await new Promise(done => later(done, 1000));
   }
   renderTurn({ auto: true });
 }
@@ -2430,7 +2430,7 @@ function renderTurn({ auto = false } = {}) {
 
   wireVolume();
 
-  // After a 3-2-1 countdown (auto) the pause already happened, so the clip starts right away.
+  // After a 3-2-1 countdown (auto) the clip starts the moment the "1" ends.
   // Otherwise a chime plays first, with a short gap so it doesn't cover the song's start.
   if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
   if (auto && !isFinal) play(); else later(play, isFinal ? 1000 : 500);
@@ -2518,7 +2518,7 @@ function showResult(song, r) {
         if (!alive()) return;
         show(`${esc(nextName)} in ${n}`);
         Sfx.countdown(n);
-        await wait(n === 1 ? 500 : 1000);
+        await wait(1000);
       }
     }
     if (alive()) go(true);
