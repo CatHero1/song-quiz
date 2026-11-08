@@ -602,6 +602,19 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 .stat { padding: 14px 12px; border-radius: 16px; background: var(--card-hi); border: var(--border-w) solid var(--edge); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .stat .num { font-family: var(--font-marquee); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 2px 2px 0 var(--brand); }
 .stat .lbl { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .03em; }
+.seg .tile { padding: 9px 12px; font-size: 15px; }
+.dist { display: flex; flex-direction: column; gap: 6px; }
+.dist-row { display: grid; grid-template-columns: 34px 1fr 28px; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.dist-label { color: var(--muted); text-align: right; }
+.dist-track { height: 20px; border-radius: 6px; background: var(--card-hi); overflow: hidden; }
+.dist-bar { display: block; height: 100%; border-radius: 6px; background: var(--right); }
+.dist-bar.miss { background: var(--wrong); }
+.dist-n { text-align: right; }
+.manage { margin: 0; color: var(--muted); font-size: 14px; }
+.confirm { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; border: var(--border-w) solid var(--wrong); background: color-mix(in srgb, var(--wrong) 8%, var(--card)); font-weight: 600; }
+.confirm .cta { padding: 12px; font-size: 16px; }
+.confirm .ghost-btn { padding: 12px; font-size: 16px; }
+.cta.danger { background: var(--wrong); border-color: color-mix(in srgb, var(--wrong) 60%, #000); box-shadow: 0 6px 0 color-mix(in srgb, var(--wrong) 60%, #000); color: #fff; text-shadow: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition: none !important; }
@@ -617,7 +630,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v19";
+const APP_VERSION = "v20";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1205,7 +1218,10 @@ const Voice = (() => {
    ============================================================ */
 const StatsStore = (() => {
   const KEY = "ntt-stats";
-  const blank = () => ({ name: "", games: 0, multiGames: 0, wins: 0, correct: 0, attempts: 0, streak: 0, bestStreak: 0, guessMs: 0, guesses: 0 });
+  const STEPS = 6;   // Heardle steps (1, 2, 4, 7, 11, 16 seconds)
+  const blankClassic = () => ({ games: 0, multiGames: 0, wins: 0, correct: 0, attempts: 0, streak: 0, bestStreak: 0, guessMs: 0, guesses: 0 });
+  const blankHeardle = () => ({ games: 0, multiGames: 0, wins: 0, songs: 0, solved: 0, artistOnly: 0, streak: 0, bestStreak: 0,
+                                dist: Array(STEPS).fill(0), missed: 0 });
   const id = name => name.trim().toLowerCase();
 
   function load() {
@@ -1214,14 +1230,25 @@ const StatsStore = (() => {
   function save(all) {
     try { localStorage.setItem(KEY, JSON.stringify(all)); } catch (_) { /* storage unavailable */ }
   }
-  function entry(all, name) {
-    return (all[id(name)] = Object.assign(blank(), all[id(name)], { name }));
+  // One profile per name, with separate Classic and Heardle stats. Older saves kept Classic stats at the top level.
+  function shape(raw, name) {
+    raw = raw || {};
+    const classic = Object.assign(blankClassic(), raw.classic || (raw.classic === undefined ? raw : {}));
+    const heardle = Object.assign(blankHeardle(), raw.heardle);
+    if (!Array.isArray(heardle.dist) || heardle.dist.length !== STEPS) heardle.dist = Array(STEPS).fill(0);
+    return { name: name || raw.name || "", classic: pick(classic, blankClassic()), heardle: pick(heardle, blankHeardle()) };
   }
+  const pick = (obj, template) => Object.fromEntries(Object.keys(template).map(k => [k, obj[k]]));
+  function entry(all, name) {
+    return (all[id(name)] = shape(all[id(name)], name));
+  }
+  const total = s => s.classic.games + s.heardle.games;
 
   return {
+    // Classic: one result per part answered (title, artist).
     recordTurn(name, results, ms) {
       const all = load();
-      const s = entry(all, name);
+      const s = entry(all, name).classic;
       for (const right of results) {
         s.attempts++;
         if (right) { s.correct++; s.streak++; s.bestStreak = Math.max(s.bestStreak, s.streak); }
@@ -1230,10 +1257,19 @@ const StatsStore = (() => {
       if (ms > 0) { s.guessMs += ms; s.guesses++; }
       save(all);
     },
-    recordGame(players, winners) {
+    // Heardle: step is the index of the clip length they solved it at.
+    recordHeardle(name, { won, step, artist }) {
+      const all = load();
+      const s = entry(all, name).heardle;
+      s.songs++;
+      if (won) { s.solved++; s.dist[step]++; s.streak++; s.bestStreak = Math.max(s.bestStreak, s.streak); }
+      else { s.missed++; s.streak = 0; if (artist) s.artistOnly++; }
+      save(all);
+    },
+    recordGame(players, winners, mode) {
       const all = load();
       for (const p of players) {
-        const s = entry(all, p.name);
+        const s = entry(all, p.name)[mode === "heardle" ? "heardle" : "classic"];
         s.games++;
         if (players.length > 1) {
           s.multiGames++;
@@ -1242,8 +1278,19 @@ const StatsStore = (() => {
       }
       save(all);
     },
+    reset(name) {
+      const all = load();
+      if (all[id(name)]) { all[id(name)] = shape({ classic: {}, heardle: {} }, all[id(name)].name || name); save(all); }
+    },
+    remove(name) {
+      const all = load();
+      delete all[id(name)];
+      save(all);
+    },
     list() {
-      return Object.values(load()).sort((a, b) => b.games - a.games || b.attempts - a.attempts);
+      const all = load();
+      return Object.entries(all).map(([key, raw]) => shape(raw, raw && raw.name || key))
+        .sort((a, b) => total(b) - total(a) || b.classic.attempts + b.heardle.songs - a.classic.attempts - a.heardle.songs);
     },
   };
 })();
@@ -2720,7 +2767,7 @@ function renderHeardleTurn() {
     const artistOnlyWin = !won && artistPts > 0;
     const before = player.score;
     player.score += points;
-    StatsStore.recordTurn(player.name, [won], 0);
+    StatsStore.recordHeardle(player.name, { won, step, artist: artistPts > 0 });
     document.getElementById("h-guess").hidden = true;
     drawPlayer();
     if (won) Sfx.right();
@@ -2825,7 +2872,7 @@ function renderFinal() {
   const ranked = game.players.slice().sort((a, b) => b.score - a.score);
   const top = ranked[0].score;
   const winners = ranked.filter(p => p.score === top).map(p => p.name);
-  if (!game.recorded) { StatsStore.recordGame(game.players, winners); game.recorded = true; }
+  if (!game.recorded) { StatsStore.recordGame(game.players, winners, game.mode); game.recorded = true; }
   const headline = winners.length > 1 ? "It's a tie!" : `${winners[0]} wins!`;
 
   app.innerHTML = `
@@ -2849,8 +2896,11 @@ function renderFinal() {
 }
 
 /* ---------- Stats drawer ---------- */
-function openStats(selected) {
+let statsMode = null;   // which tab the drawer shows; starts on the mode being played
+
+function openStats(selected, confirming = "") {
   stopClip();
+  if (!statsMode) statsMode = game ? game.mode : settings.mode;
   const all = StatsStore.list();
   const current = (game ? game.players.map(p => p.name) : settings.players).map(n => n.trim().toLowerCase());
   const chosen = all.find(s => s.name.toLowerCase() === (selected || "").toLowerCase())
@@ -2860,6 +2910,52 @@ function openStats(selected) {
   const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : "—");
   const stat = (num, lbl) => `<div class="stat"><span class="num">${num}</span><span class="lbl">${lbl}</span></div>`;
 
+  function classicView(c) {
+    return `
+      <div class="stat-grid">
+        ${stat(c.games, "Games played")}
+        ${stat(pct(c.wins, c.multiGames), "Win rate")}
+        ${stat(pct(c.correct, c.attempts), "Guess accuracy")}
+        ${stat(c.streak, "Current streak")}
+        ${stat(c.bestStreak, "Best streak")}
+        ${stat(c.guesses ? `${(c.guessMs / c.guesses / 1000).toFixed(1)}s` : "—", "Avg guess speed")}
+      </div>
+      <p class="hint">Streaks count correct answers in a row. Win rate counts games with 2 or more players.</p>`;
+  }
+  function heardleView(h) {
+    const most = Math.max(1, ...h.dist, h.missed);
+    const bar = (label, n, miss = false) => `
+      <div class="dist-row">
+        <span class="dist-label">${label}</span>
+        <span class="dist-track"><span class="dist-bar ${miss ? "miss" : ""}" style="width:${Math.max(n ? 8 : 0, (n / most) * 100)}%"></span></span>
+        <span class="dist-n">${n}</span>
+      </div>`;
+    return `
+      <div class="stat-grid">
+        ${stat(h.games, "Games played")}
+        ${stat(pct(h.wins, h.multiGames), "Win rate")}
+        ${stat(pct(h.solved, h.songs), "Songs solved")}
+        ${stat(h.streak, "Current streak")}
+        ${stat(h.bestStreak, "Best streak")}
+        ${stat(h.artistOnly, "Artist only")}
+      </div>
+      <div class="dist" aria-label="Songs solved at each clip length">
+        <span class="section-title">Solved at</span>
+        ${HEARDLE_STEPS.map((sec, i) => bar(`${sec}s`, h.dist[i])).join("")}
+        ${bar("✗", h.missed, true)}
+      </div>
+      <p class="hint">Streaks count songs solved in a row. "Artist only" counts songs where you got the artist but not the song.</p>`;
+  }
+  function manage(name) {
+    if (confirming === "reset") return `
+      <div class="confirm"><span>Reset all of ${esc(name)}'s stats to zero?</span>
+        <div class="actions"><button class="ghost-btn" data-cancel>Cancel</button><button class="cta danger" data-do="reset">Reset</button></div></div>`;
+    if (confirming === "delete") return `
+      <div class="confirm"><span>Delete ${esc(name)} and all their stats?</span>
+        <div class="actions"><button class="ghost-btn" data-cancel>Cancel</button><button class="cta danger" data-do="delete">Delete</button></div></div>`;
+    return `<p class="manage"><button class="link-btn" data-ask="reset">Reset stats</button> · <button class="link-btn" data-ask="delete">Delete player</button></p>`;
+  }
+
   statsDialog.innerHTML = `
     <div class="drawer-inner">
       <div class="drawer-head">
@@ -2867,24 +2963,30 @@ function openStats(selected) {
         <button class="small-btn" id="close-stats">Close</button>
       </div>
       ${chosen ? `
-        <div class="who">${all.map(s => `<button class="tile" data-who="${esc(s.name)}" aria-pressed="${s === chosen}">${esc(s.name)}</button>`).join("")}</div>
-        <div class="stat-grid">
-          ${stat(chosen.games, "Games played")}
-          ${stat(pct(chosen.wins, chosen.multiGames), "Win rate")}
-          ${stat(pct(chosen.correct, chosen.attempts), "Guess accuracy")}
-          ${stat(chosen.streak, "Current streak")}
-          ${stat(chosen.bestStreak, "Best streak")}
-          ${stat(chosen.guesses ? `${(chosen.guessMs / chosen.guesses / 1000).toFixed(1)}s` : "—", "Avg guess speed")}
+        <div class="who">${all.map(s => `<button class="tile" data-who="${esc(s.name)}" aria-pressed="${s.name === chosen.name}">${esc(s.name)}</button>`).join("")}</div>
+        <div class="tiles two seg" role="group" aria-label="Game mode">
+          <button class="tile" data-stats-mode="classic" aria-pressed="${statsMode === "classic"}">${icon("mic")}<span>Classic</span></button>
+          <button class="tile" data-stats-mode="heardle" aria-pressed="${statsMode === "heardle"}">${icon("wave")}<span>Heardle</span></button>
         </div>
-        <p class="hint">Streaks count correct answers in a row. Win rate counts games with 2 or more players. Stats are saved on this device.</p>
-      ` : `<p class="hint">No stats yet. Finish a turn and each player's accuracy, streaks and speed show up here.</p>`}
+        ${statsMode === "heardle" ? heardleView(chosen.heardle) : classicView(chosen.classic)}
+        ${manage(chosen.name)}
+        <p class="hint">Stats are saved on this device.</p>
+      ` : `<p class="hint">No stats yet. Finish a turn and each player's stats show up here.</p>`}
     </div>`;
 
   document.getElementById("close-stats").onclick = () => statsDialog.close();
   statsDialog.querySelectorAll("[data-who]").forEach(b => b.onclick = () => openStats(b.dataset.who));
+  statsDialog.querySelectorAll("[data-stats-mode]").forEach(b => b.onclick = () => { statsMode = b.dataset.statsMode; openStats(chosen.name); });
+  statsDialog.querySelectorAll("[data-ask]").forEach(b => b.onclick = () => openStats(chosen.name, b.dataset.ask));
+  statsDialog.querySelectorAll("[data-cancel]").forEach(b => b.onclick = () => openStats(chosen.name));
+  statsDialog.querySelectorAll("[data-do]").forEach(b => b.onclick = () => {
+    if (b.dataset.do === "reset") { StatsStore.reset(chosen.name); openStats(chosen.name); }
+    else { StatsStore.remove(chosen.name); openStats(); }
+  });
   if (!statsDialog.open) statsDialog.showModal();
 }
 statsDialog.addEventListener("click", e => { if (e.target === statsDialog) statsDialog.close(); });
+statsDialog.addEventListener("close", () => { statsMode = null; });
 
 // Finish a Spotify login if Spotify just sent us back here, then show the setup screen.
 SongSource.libraries.spotify.finishLogin().then(result => {
