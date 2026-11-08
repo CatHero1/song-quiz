@@ -166,6 +166,57 @@
 .switch input:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
 .link-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--text); text-decoration: underline; }
 
+/* Heardle mode */
+.tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiles.two .tile { justify-content: center; }
+.h-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.h-rows li {
+  min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 12px; min-width: 0;
+  background: var(--card); border: var(--border-w) solid var(--edge); font-weight: 600; font-size: 15px;
+}
+.h-rows li .ico { width: 18px; height: 18px; }
+.h-rows .h-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-rows small { flex: none; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, #f5b800 25%, var(--card)); }
+.h-rows li.h-empty { background: transparent; border-style: dashed; }
+.h-rows li.h-skip { color: var(--muted); }
+.h-rows li.h-wrong .ico { color: var(--wrong); }
+.h-rows li.h-artist { border-color: #e0a800; }
+.h-rows li.h-artist .ico { color: #e0a800; }
+.h-rows li.h-right { border-color: var(--right); background: color-mix(in srgb, var(--right) 15%, var(--card)); }
+.h-rows li.h-right .ico { color: var(--right); }
+.h-player { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.h-bar { position: relative; width: 100%; height: 14px; border-radius: 999px; overflow: hidden; background: var(--card); border: var(--border-w) solid var(--edge); }
+.h-unlocked { position: absolute; inset: 0 auto 0 0; background: color-mix(in srgb, var(--a1) 25%, var(--card)); transition: width .3s; }
+.h-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: linear-gradient(90deg, var(--a1), var(--a2)); }
+.h-bar i { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--edge); }
+.h-bar.full i { display: none; }
+.h-times { width: 100%; display: flex; justify-content: space-between; margin-top: -4px; color: var(--muted); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.h-play {
+  width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--brand); color: var(--on-brand); border: var(--border-w) solid var(--brand-deep); box-shadow: 0 6px 0 var(--brand-deep);
+  transition: transform .08s, box-shadow .08s;
+}
+.h-play svg { width: 30px; height: 30px; fill: currentColor; }
+.h-play:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--brand-deep); }
+.h-guess { display: flex; flex-direction: column; gap: 12px; }
+.h-search { position: relative; }
+.h-search .typed { width: 100%; }
+.h-list {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 8px); z-index: 15; list-style: none; margin: 0; padding: 6px;
+  max-height: 320px; overflow-y: auto; border-radius: 14px; background: var(--card); border: var(--border-w) solid var(--edge);
+  box-shadow: 0 -8px 30px rgba(0,0,0,.16);
+}
+.h-list button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px; border: 0; border-radius: 10px; background: none; text-align: left; }
+.h-list button:hover, .h-list li[aria-selected="true"] button { background: var(--card-hi); }
+.h-list img, .h-noart { width: 36px; height: 36px; border-radius: 6px; flex: none; background: var(--card-hi); object-fit: cover; }
+.h-txt { min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+.h-txt b, .h-txt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h-txt span { color: var(--muted); font-size: 14px; }
+.h-actions { display: flex; gap: 10px; align-items: center; }
+.h-actions .pill { flex: none; }
+.h-actions .cta { flex: 1; padding: 14px; font-size: 18px; }
+.h-grid { margin: 0; text-align: center; font-size: 24px; letter-spacing: 2px; }
+
 /* Dark themes */
 :root[data-look="neon"], :root[data-look="vinyl"], :root[data-look="lagoon"] {
   --gold-bg: #2e2508; --gold-edge: #ffbf00; --gold-deep: #6b5000; --gold-text: #ffcf40;
@@ -562,7 +613,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v16";
+const APP_VERSION = "v17";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -572,6 +623,7 @@ const APP_VERSION = "v16";
      rows, categories                -> what players can pick
      peek(categoryId)                -> Promise<{ covers: string[], artists: string[] }> (card art)
      topArtists(), searchArtists(q)  -> Promise<Artist[]>   Artist: { id, name, picture }
+     searchSongs(q)                  -> Promise<{ id, title, artist, cover }[]>
      getPool(choice, { need, onProgress, wellKnown }) -> Promise<Song[]>
        choice: { type: "category" | "artist", id } or { type: "library", service: "spotify" | "youtube", id: "liked" | playlistId }
      libraries.spotify / libraries.youtube: login and the player's own music, same shape:
@@ -704,6 +756,14 @@ const SongSource = (() => {
   async function searchArtists(q) {
     const res = await jsonp("/search/artist", { q, limit: 12 });
     return (res.data || []).map(toArtist);
+  }
+  // Song search for Heardle guesses: { id, title, artist, cover }
+  async function searchSongs(q) {
+    const res = await jsonp("/search", { q, limit: 15 });
+    return dedupe((res.data || []).filter(t => t && t.artist).map(t => ({
+      id: String(t.id), title: (t.title_short || t.title || "").trim(), artist: (t.artist.name || "").trim(),
+      cover: t.album ? (t.album.cover_small || "") : "",
+    })));
   }
 
   /* ---- Spotify: login (PKCE, no secret needed) and the player's own music ---- */
@@ -979,7 +1039,7 @@ const SongSource = (() => {
     return categorySongs(cat);
   }
 
-  return { rows, categories, peek, topArtists, searchArtists, getPool, libraries };
+  return { rows, categories, peek, topArtists, searchArtists, searchSongs, getPool, libraries };
 })();
 
 /* ============================================================
@@ -1079,7 +1139,16 @@ const Matcher = (() => {
     return best;
   }
 
-  return { checkBoth };
+  // Heardle: the picked song is the answer if the cleaned titles match and the artists overlap.
+  function sameArtist(a, b) {
+    const x = clean(a), y = clean(b);
+    return Boolean(x && y) && (x === y || x.includes(y) || y.includes(x));
+  }
+  function sameSong(a, b) {
+    return clean(a.title) === clean(b.title) && sameArtist(a.artist, b.artist);
+  }
+
+  return { checkBoth, sameSong, sameArtist };
 })();
 
 /* ============================================================
@@ -1220,6 +1289,8 @@ const ICONS = {
   dance: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M6 18l2.5-2.5M15.5 8.5L18 6"/>',
   latin: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   volume: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  wave: '<path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 7v10M21 12h0"/>',
   mute: '<path d="M4 9.5v5h3.5L12 18V6L7.5 9.5z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M8 21h8"/>',
@@ -1440,6 +1511,7 @@ if (settings.choice && (settings.choice.type === "liked" || settings.choice.type
 if (!validChoice(settings.choice)) settings.choice = { type: "category", id: "top" };
 if (typeof settings.wellKnown !== "boolean") settings.wellKnown = true;
 if (!(settings.volume >= 0 && settings.volume <= 1)) settings.volume = 1;
+if (!["classic", "heardle"].includes(settings.mode)) settings.mode = "classic";
 // iPhones and iPads ignore volume set by a page (only their side buttons work), so the slider is hidden there.
 const volumeWorks = (() => { try { const a = new Audio(); a.volume = 0.5; return a.volume === 0.5; } catch (_) { return false; } })();
 if (!THEMES.some(t => t.id === settings.look)) settings.look = "sky";
@@ -1565,6 +1637,15 @@ function renderSetup(errorText = "") {
       <div class="ptiles" id="players"></div>
     </section>
 
+    <section class="block">
+      <h2 class="section-title">Game mode</h2>
+      <div class="tiles two">
+        <button class="tile" data-mode="classic" aria-pressed="${settings.mode === "classic"}">${icon("mic")}<span>Classic</span></button>
+        <button class="tile" data-mode="heardle" aria-pressed="${settings.mode === "heardle"}">${icon("wave")}<span>Heardle</span></button>
+      </div>
+      <p class="hint" id="mode-hint"></p>
+    </section>
+
     ${SongSource.rows.map(row => `
       <section class="block">
         <div class="row-head">
@@ -1597,7 +1678,7 @@ function renderSetup(errorText = "") {
       </div>
     </section>
 
-    <section class="block">
+    <section class="block" id="clip-section">
       <h2 class="section-title">Clip length</h2>
       <div class="tiles three">${[5, 10, 15].map(s => choice("clip", String(s), `${s} sec`, String(settings.clip))).join("")}</div>
     </section>
@@ -1613,6 +1694,19 @@ function renderSetup(errorText = "") {
   LIBRARIES.forEach(wireLibrary);
   openLibraryNext = null;
 
+  const showMode = () => {
+    document.getElementById("mode-hint").textContent = settings.mode === "heardle"
+      ? "Start with 1 second of a song. Each skip or wrong guess plays a little more. Search and pick your answer."
+      : "Hear a clip, then say the song and the artist out loud.";
+    document.getElementById("clip-section").hidden = settings.mode === "heardle";
+  };
+  showMode();
+  app.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => {
+    settings.mode = b.dataset.mode;
+    app.querySelectorAll("[data-mode]").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+    showMode();
+    saveSettings();
+  });
   app.querySelectorAll("[data-clip]").forEach(b => b.onclick = () => {
     settings.clip = Number(b.dataset.clip);
     app.querySelectorAll("[data-clip]").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
@@ -1941,8 +2035,11 @@ async function startGame() {
 
   ScreenAwake.on();
   const players = settings.players.map((name, i) => ({ name, score: 0, color: playerColor(i) }));
-  game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist",
+  game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist", mode: settings.mode,
            queue: buildQueue(pool, players.length * Rules.rounds) };
+
+  // Heardle turns start when the player taps play, so there's nothing to count down to.
+  if (game.mode === "heardle") return renderTurn();
 
   // Get ready: 3-2-1 chimes, then the first turn starts with its half-second pause.
   app.innerHTML = `
@@ -2012,6 +2109,7 @@ const COMMANDS = {
 };
 
 function renderTurn({ auto = false } = {}) {
+  if (game.mode === "heardle") return renderHeardleTurn();
   stopClip();
   clearTurnTimers();
   const player = game.players[game.turn];
@@ -2055,11 +2153,7 @@ function renderTurn({ auto = false } = {}) {
         <button class="pill" id="again">${icon("replay")} Play again <span class="count-badge" id="replays">${REPLAYS}</span></button>
         <button class="pill" id="skip">${icon("skip")} Skip</button>
       </div>
-      ${volumeWorks ? `
-        <label class="vol" for="vol">
-          <span id="vol-icon">${icon(settings.volume ? "volume" : "mute")}</span>
-          <input type="range" id="vol" min="0" max="100" step="1" value="${Math.round(settings.volume * 100)}" aria-label="Clip volume" style="--v:${Math.round(settings.volume * 100)}%">
-        </label>` : ""}
+      ${volumeControl()}
     </div>
 
     <section class="answer" id="answer">
@@ -2273,16 +2367,7 @@ function renderTurn({ auto = false } = {}) {
     if (text) handleHeard([text]);
   };
 
-  const vol = document.getElementById("vol");
-  if (vol) {
-    vol.oninput = () => {
-      settings.volume = Number(vol.value) / 100;
-      audio.volume = settings.volume;
-      vol.style.setProperty("--v", `${vol.value}%`);
-      document.getElementById("vol-icon").innerHTML = icon(settings.volume ? "volume" : "mute");
-    };
-    vol.onchange = saveSettings;
-  }
+  wireVolume();
 
   // After the 3-2-1 countdown (auto) the turn chime is skipped; the short pause keeps chimes off the song's start.
   if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
@@ -2375,6 +2460,314 @@ function showResult(song, r) {
     }
     if (alive()) go(true);
   })();
+}
+
+/* ---------- Heardle mode ---------- */
+// Same steps as Heardle: 1, 2, 4, 7, 11 and 16 seconds. Solving on the first step is worth 6 points, the last 1.
+const HEARDLE_STEPS = [1, 2, 4, 7, 11, 16];
+const HEARDLE_SQUARES = { skip: "⬛", wrong: "🟥", artist: "🟨", right: "🟩", empty: "⬜" };
+
+function renderHeardleTurn() {
+  stopClip();
+  clearTurnTimers();
+  const player = game.players[game.turn];
+  const song = game.queue[(game.round - 1) * game.players.length + game.turn];
+  const tries = HEARDLE_STEPS.length, MAX = HEARDLE_STEPS[tries - 1], FULL = 30;
+  const rows = [];            // { kind: "skip" | "wrong" | "artist" | "right", text }
+  let step = 0, done = false, chosen = null, results = [], active = -1, searchTimer = 0, ticket = 0;
+
+  app.innerHTML = `
+    ${topbar({ right: `<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, version: false, theme: false, stats: false })}
+    <div class="board" id="board">${leaderboard()}</div>
+
+    <section class="turn-head" style="--pc:${player.color}">
+      <span class="round-pill">Your turn · up to ${tries} pts</span>
+      <div class="turn-name">${esc(player.name)}</div>
+    </section>
+
+    <ol class="h-rows" id="h-rows" aria-label="Your guesses"></ol>
+
+    <div class="h-player">
+      <div class="h-bar" id="h-bar">
+        <span class="h-unlocked" id="h-unlocked"></span>
+        <span class="h-fill" id="h-fill"></span>
+        ${HEARDLE_STEPS.slice(0, -1).map(t => `<i style="left:${(t / MAX) * 100}%"></i>`).join("")}
+      </div>
+      <div class="h-times"><span id="h-pos">0:00</span><span id="h-max">0:${String(MAX).padStart(2, "0")}</span></div>
+      <button class="h-play" id="h-play" aria-label="Play the clip">${playIcon(false)}</button>
+      ${volumeControl()}
+    </div>
+
+    <section class="h-guess" id="h-guess">
+      <div class="h-search">
+        <ul class="h-list" id="h-list" role="listbox" hidden></ul>
+        <input class="typed" id="h-q" type="search" placeholder="Know it? Search for the song" autocomplete="off" autocapitalize="off" spellcheck="false"
+          role="combobox" aria-expanded="false" aria-controls="h-list" aria-autocomplete="list" aria-label="Search for the song">
+      </div>
+      <div class="h-actions">
+        <button class="pill" id="h-skip"></button>
+        <button class="cta" id="h-submit" disabled>Submit</button>
+      </div>
+    </section>
+
+    <section id="result" hidden></section>
+  `;
+  wireVolume();
+
+  const bar = document.getElementById("h-bar");
+  const unlocked = document.getElementById("h-unlocked");
+  const fill = document.getElementById("h-fill");
+  const pos = document.getElementById("h-pos");
+  const playBtn = document.getElementById("h-play");
+  const input = document.getElementById("h-q");
+  const list = document.getElementById("h-list");
+  const skipBtn = document.getElementById("h-skip");
+  const submitBtn = document.getElementById("h-submit");
+  const scale = () => (done ? FULL : MAX);
+
+  // Load the clip now so even the 1-second play starts instantly.
+  audio.src = song.preview;
+  audio.preload = "auto";
+  audio.load();
+
+  function drawRows() {
+    document.getElementById("h-rows").innerHTML = Array.from({ length: tries }, (_, i) => {
+      const r = rows[i];
+      if (!r) return `<li class="h-empty"></li>`;
+      if (r.kind === "skip") return `<li class="h-skip">${icon("skip")}<span class="h-t">Skipped</span></li>`;
+      const tag = r.kind === "artist" ? `<small>Right artist</small>` : "";
+      return `<li class="h-${r.kind}">${icon(r.kind === "right" ? "check" : "cross")}<span class="h-t">${esc(r.text)}</span>${tag}</li>`;
+    }).join("");
+  }
+
+  function drawPlayer() {
+    unlocked.style.width = `${((done ? FULL : HEARDLE_STEPS[step]) / scale()) * 100}%`;
+    bar.classList.toggle("full", done);
+    document.getElementById("h-max").textContent = `0:${String(scale()).padStart(2, "0")}`;
+    if (!done) {
+      const last = step === tries - 1;
+      skipBtn.innerHTML = last ? "Give up" : `Skip <b>+${HEARDLE_STEPS[step + 1] - HEARDLE_STEPS[step]}s</b>`;
+    }
+  }
+
+  function stopPlaying() {
+    cancelAnimationFrame(clipFrame);
+    clipFrame = 0;
+    audio.pause();
+    playBtn.innerHTML = playIcon(false);
+    playBtn.setAttribute("aria-label", "Play the clip");
+    fill.style.width = "0";
+    pos.textContent = "0:00";
+  }
+
+  function play() {
+    if (clipFrame) return stopPlaying();   // the button doubles as stop, like Heardle
+    const limit = done ? FULL : HEARDLE_STEPS[step];
+    audio.volume = settings.volume;
+    audio.currentTime = 0;
+    audio.play().then(() => {
+      playBtn.innerHTML = playIcon(true);
+      playBtn.setAttribute("aria-label", "Stop");
+      const tick = () => {
+        const t = audio.currentTime;
+        fill.style.width = `${(Math.min(t, limit) / scale()) * 100}%`;
+        pos.textContent = `0:${String(Math.floor(Math.min(t, limit))).padStart(2, "0")}`;
+        if (t >= limit || audio.ended) stopPlaying();
+        else clipFrame = requestAnimationFrame(tick);
+      };
+      clipFrame = requestAnimationFrame(tick);
+    }).catch(() => stopPlaying());
+  }
+
+  // Song search (picked from the list, like Heardle, so typos never cost a try).
+  function closeList() {
+    list.hidden = true;
+    input.setAttribute("aria-expanded", "false");
+    active = -1;
+  }
+  function showResults() {
+    if (!results.length) { closeList(); return; }
+    list.innerHTML = results.map((r, i) => `
+      <li role="option" id="h-opt-${i}" aria-selected="${i === active}">
+        <button type="button" data-pick="${i}" tabindex="-1">
+          ${r.cover ? `<img src="${esc(r.cover)}" alt="" width="36" height="36">` : `<span class="h-noart"></span>`}
+          <span class="h-txt"><b>${esc(r.title)}</b><span>${esc(r.artist)}</span></span>
+        </button>
+      </li>`).join("");
+    list.hidden = false;
+    input.setAttribute("aria-expanded", "true");
+    input.setAttribute("aria-activedescendant", active >= 0 ? `h-opt-${active}` : "");
+    list.querySelectorAll("[data-pick]").forEach(b => {
+      b.onpointerdown = e => e.preventDefault();   // keep the keyboard open on phones
+      b.onclick = () => choose(results[Number(b.dataset.pick)]);
+    });
+  }
+  function choose(r) {
+    chosen = r;
+    input.value = `${r.title} – ${r.artist}`;
+    submitBtn.disabled = false;
+    closeList();
+  }
+  async function search(q) {
+    const mine = ++ticket;
+    try {
+      const found = await SongSource.searchSongs(q);
+      if (mine !== ticket || done) return;
+      results = found.slice(0, 6);
+      active = -1;
+      showResults();
+    } catch (_) { /* a failed search just shows nothing */ }
+  }
+  input.oninput = () => {
+    chosen = null;
+    submitBtn.disabled = true;
+    clearTimeout(searchTimer);
+    const q = input.value.trim();
+    if (q.length < 2) { results = []; closeList(); return; }
+    searchTimer = later(() => search(q), 250);
+  };
+  input.onkeydown = e => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (list.hidden || !results.length) return;
+      e.preventDefault();
+      active = (active + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+      showResults();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (!list.hidden && results.length) choose(results[Math.max(active, 0)]);
+      else if (chosen) guess();
+    } else if (e.key === "Escape") closeList();
+  };
+  input.onblur = () => later(closeList, 150);
+
+  function nextStep() {
+    stopPlaying();
+    step++;
+    drawRows();
+    if (step >= tries) return finish(false);
+    drawPlayer();
+  }
+  function skip() {
+    if (done) return;
+    rows.push({ kind: "skip" });
+    nextStep();
+  }
+  function guess() {
+    if (done || !chosen) return;
+    const pick = chosen;
+    chosen = null;
+    input.value = "";
+    submitBtn.disabled = true;
+    closeList();
+    if (pick.id === song.id || Matcher.sameSong(pick, song)) {
+      rows.push({ kind: "right", text: `${pick.title} – ${pick.artist}` });
+      drawRows();
+      return finish(true);
+    }
+    const artistOnly = !game.artistMode && Matcher.sameArtist(pick.artist, song.artist);
+    rows.push({ kind: artistOnly ? "artist" : "wrong", text: `${pick.title} – ${pick.artist}` });
+    nextStep();
+  }
+
+  function finish(won) {
+    done = true;
+    stopPlaying();
+    const points = won ? tries - step : 0;
+    const before = player.score;
+    player.score += points;
+    StatsStore.recordTurn(player.name, [won], 0);
+    document.getElementById("h-guess").hidden = true;
+    drawPlayer();
+    if (won) Sfx.right();
+    else {
+      Sfx.wrong();
+      later(() => Announcer.say(game.artistMode ? `The song was ${song.title}.` : `The song was ${song.title}, by ${song.artist}.`), 700);
+    }
+    if (points) later(() => rollScore(game.turn, before, player.score), 350);
+
+    const squares = Array.from({ length: tries }, (_, i) => HEARDLE_SQUARES[rows[i] ? rows[i].kind : "empty"]).join("");
+    const shareText = `Song Quiz · Heardle\n🔊${squares}\n${won ? `Got it in ${HEARDLE_STEPS[step]}s` : "Didn't get it"}\ncathero1.github.io/song-quiz`;
+    const lastTurn = game.turn === game.players.length - 1;
+    const nextName = lastTurn ? (game.round === Rules.rounds ? null : game.players[0].name) : game.players[game.turn + 1].name;
+
+    const box = document.getElementById("result");
+    box.hidden = false;
+    box.className = "result";
+    box.innerHTML = `
+      <div class="earned ${points ? "" : "zero"}">${points ? `+${points} for ${esc(player.name)}` : "Not this time"}</div>
+      ${won ? `<p class="guess-time">Got it in ${HEARDLE_STEPS[step]} second${HEARDLE_STEPS[step] === 1 ? "" : "s"}</p>` : ""}
+      <div class="song">
+        ${song.cover ? `<img src="${esc(song.cover)}" alt="" width="80" height="80">` : ""}
+        <div class="meta">
+          <span class="section-title">It was</span>
+          <span class="t">${esc(song.title)}</span>
+          <span class="a">${esc(song.artist)}</span>
+        </div>
+      </div>
+      <p class="h-grid" aria-label="Result">🔊${squares}</p>
+      <p class="hint center">Tap play to hear the full clip.</p>
+      <div class="pills"><button class="pill" id="h-share">${icon("copy")} Copy result</button></div>
+      <button class="cta" id="next">${nextName ? `Pass to ${esc(nextName)}` : "See final scores"}</button>
+    `;
+    box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+    const shareBtn = document.getElementById("h-share");
+    shareBtn.onclick = () => {
+      const copied = () => { shareBtn.innerHTML = `${icon("check")} Copied`; };
+      const fallback = () => {
+        const area = document.createElement("textarea");
+        area.value = shareText;
+        area.setAttribute("readonly", "");
+        area.style.position = "fixed"; area.style.opacity = "0";
+        document.body.appendChild(area);
+        area.select();
+        try { if (document.execCommand("copy")) copied(); } catch (_) {}
+        area.remove();
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(shareText).then(copied, fallback);
+      else fallback();
+    };
+    document.getElementById("next").onclick = () => {
+      Sfx.unlock();
+      if (!nextName) return renderFinal();
+      if (lastTurn) { game.round += 1; game.turn = 0; } else { game.turn += 1; }
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      renderTurn();
+    };
+  }
+
+  playBtn.onclick = play;
+  skipBtn.onclick = skip;
+  submitBtn.onclick = guess;
+  drawRows();
+  drawPlayer();
+  Sfx.turn();
+}
+
+function playIcon(playing) {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${playing ? '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/>' : '<path d="M8 5v14l11-7z"/>'}</svg>`;
+}
+
+/* ---------- Clip volume (shared by both modes) ---------- */
+function volumeControl() {
+  if (!volumeWorks) return "";
+  const v = Math.round(settings.volume * 100);
+  return `
+    <label class="vol" for="vol">
+      <span id="vol-icon">${icon(settings.volume ? "volume" : "mute")}</span>
+      <input type="range" id="vol" min="0" max="100" step="1" value="${v}" aria-label="Clip volume" style="--v:${v}%">
+    </label>`;
+}
+function wireVolume() {
+  const vol = document.getElementById("vol");
+  if (!vol) return;
+  vol.oninput = () => {
+    settings.volume = Number(vol.value) / 100;
+    audio.volume = settings.volume;
+    vol.style.setProperty("--v", `${vol.value}%`);
+    document.getElementById("vol-icon").innerHTML = icon(settings.volume ? "volume" : "mute");
+  };
+  vol.onchange = saveSettings;
 }
 
 /* ---------- Final ---------- */
