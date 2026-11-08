@@ -610,6 +610,29 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 .dist-bar { display: block; height: 100%; border-radius: 6px; background: var(--right); }
 .dist-bar.miss { background: var(--wrong); }
 .dist-n { text-align: right; }
+.recap { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.recap ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.recap-round { margin: 6px 0 0; font-size: 14px; font-weight: 700; color: var(--muted); }
+.recap-row {
+  --pc: var(--brand);
+  display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px 10px 10px;
+  border-radius: 16px; background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 4px 0 var(--edge-deep);
+}
+.recap-row img, .recap-noart { width: 52px; height: 52px; border-radius: 10px; object-fit: cover; background: var(--card-hi); display: block; }
+.recap-mid { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.recap-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.recap-line > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recap-line .ico { width: 15px; height: 15px; stroke-width: 3; }
+.recap-line.t { font-weight: 700; font-size: 16px; }
+.recap-line.a { color: var(--muted); font-size: 14px; font-weight: 600; }
+.recap-line.ok .ico { color: var(--right); }
+.recap-line.no .ico { color: var(--wrong); }
+.recap-note { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.recap-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.recap-pts { font-family: var(--font-marquee); font-size: 20px; line-height: 1; color: var(--right); font-variant-numeric: tabular-nums; }
+.recap-pts.zero { color: var(--muted); }
+.recap-who { display: flex; align-items: center; gap: 5px; max-width: 96px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.recap-who i { width: 9px; height: 9px; border-radius: 50%; background: var(--pc); flex: none; }
 .manage { margin: 0; color: var(--muted); font-size: 14px; }
 .confirm { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: 16px; border: var(--border-w) solid var(--wrong); background: color-mix(in srgb, var(--wrong) 8%, var(--card)); font-weight: 600; }
 .confirm .cta { padding: 12px; font-size: 16px; }
@@ -630,7 +653,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v21";
+const APP_VERSION = "v22";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2094,7 +2117,7 @@ async function startGame() {
 
   ScreenAwake.on();
   const players = settings.players.map((name, i) => ({ name, score: 0, color: playerColor(i) }));
-  game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist", mode: settings.mode,
+  game = { pool, players, round: 1, turn: 0, recorded: false, artistMode: choice.type === "artist", mode: settings.mode, history: [],
            queue: buildQueue(pool, players.length * Rules.rounds) };
 
   // Heardle turns start when the player taps play, so there's nothing to count down to.
@@ -2433,7 +2456,9 @@ function renderTurn({ auto = false } = {}) {
   // After a 3-2-1 countdown (auto) the clip starts the moment the "1" ends.
   // Otherwise a chime plays first, with a short gap so it doesn't cover the song's start.
   if (isFinal) Sfx.bonus(); else if (!auto) Sfx.turn();
-  if (auto && !isFinal) play(); else later(play, isFinal ? 1000 : 500);
+  // Wait two frames so the turn screen is on screen before the music starts.
+  if (auto && !isFinal) requestAnimationFrame(() => requestAnimationFrame(() => { if (!locked) play(); }));
+  else later(play, isFinal ? 1000 : 500);
 }
 
 function showResult(song, r) {
@@ -2489,6 +2514,8 @@ function showResult(song, r) {
   });
   const go = auto => {
     autoToken++;
+    game.history.push({ round: game.round, player: game.turn, song, points: r.earned, title: r.titleRight, artist: game.artistMode ? null : r.artistRight,
+                        note: r.skipped ? "Skipped" : r.timedOut ? "Time's up" : "" });
     StatsStore.recordTurn(player.name, game.artistMode ? [r.titleRight] : [r.titleRight, r.artistRight], r.ms);
     if (!nextName) return renderFinal();
     if (lastTurn) { game.round += 1; game.turn = 0; } else { game.turn += 1; }
@@ -2768,6 +2795,8 @@ function renderHeardleTurn() {
     const before = player.score;
     player.score += points;
     StatsStore.recordHeardle(player.name, { won, step, artist: artistPts > 0 });
+    game.history.push({ round: game.round, player: game.turn, song, points, title: won, artist: game.artistMode ? null : won || artistPts > 0,
+                        note: won ? `Solved at ${HEARDLE_STEPS[step]}s` : artistPts ? "Got the artist" : "Missed" });
     document.getElementById("h-guess").hidden = true;
     drawPlayer();
     if (won) Sfx.right();
@@ -2888,11 +2917,46 @@ function renderFinal() {
       <button class="ghost-btn" id="setup">Change settings</button>
       <button class="cta" id="rematch">Rematch</button>
     </div>
+    ${recap()}
   `;
   wireTopbar();
   Sfx.win();
   document.getElementById("rematch").onclick = startGame;
   document.getElementById("setup").onclick = () => renderSetup();
+}
+
+// Every song of the game in order: art, song and artist with ✓/✗, and the points for that turn.
+function recap() {
+  if (!game.history.length) return "";
+  const many = game.players.length > 1;
+  const mark = ok => icon(ok ? "check" : "cross");
+  const row = h => {
+    const p = game.players[h.player];
+    return `
+      <li class="recap-row" style="--pc:${p.color}">
+        ${h.song.cover ? `<img src="${esc(h.song.cover)}" alt="" width="52" height="52" loading="lazy">` : `<span class="recap-noart"></span>`}
+        <div class="recap-mid">
+          <span class="recap-line t ${h.title ? "ok" : "no"}">${mark(h.title)}<span>${esc(h.song.title)}</span></span>
+          <span class="recap-line a ${h.artist === null ? "" : h.artist ? "ok" : "no"}">${h.artist === null ? "" : mark(h.artist)}<span>${esc(h.song.artist)}</span></span>
+          ${h.note ? `<span class="recap-note">${esc(h.note)}</span>` : ""}
+        </div>
+        <div class="recap-right">
+          <span class="recap-pts ${h.points ? "" : "zero"}">${h.points ? `+${h.points}` : "0"}</span>
+          ${many ? `<span class="recap-who"><i></i>${esc(p.name)}</span>` : ""}
+        </div>
+      </li>`;
+  };
+  const rounds = [...new Set(game.history.map(h => h.round))];
+  const bonus = r => (game.mode === "classic" && r === Rules.rounds ? " · double points" : "");
+  return `
+    <section class="recap">
+      <h2 class="section-title">This game</h2>
+      ${many
+        ? rounds.map(r => `
+            <h3 class="recap-round">Round ${r}${bonus(r)}</h3>
+            <ol>${game.history.filter(h => h.round === r).map(row).join("")}</ol>`).join("")
+        : `<ol>${game.history.map(row).join("")}</ol>`}
+    </section>`;
 }
 
 /* ---------- Stats drawer ---------- */
