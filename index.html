@@ -645,7 +645,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 .recap-line.a { color: var(--muted); font-size: 14px; font-weight: 600; }
 .recap-line.ok .ico { color: var(--right); }
 .recap-line.no .ico { color: var(--wrong); }
-.recap-note { font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.recap-note { font-size: 13px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; }
 .recap-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .recap-pts { font-family: var(--font-marquee); font-size: 20px; line-height: 1; color: var(--right); font-variant-numeric: tabular-nums; }
 .recap-pts.zero { color: var(--muted); }
@@ -671,7 +671,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v24";
+const APP_VERSION = "v25";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2589,7 +2589,8 @@ function showResult(song, r) {
   const go = auto => {
     autoToken++;
     game.history.push({ round: game.round, player: game.turn, song, points: r.earned, title: r.titleRight, artist: game.artistMode ? null : r.artistRight,
-                        note: r.skipped ? "Skipped" : r.timedOut ? "Time's up" : "" });
+                        note: r.skipped ? "Skipped" : r.timedOut ? "Time's up"
+                          : r.ms ? `${r.earned ? "Guessed" : "Answered"} in ${(r.ms / 1000).toFixed(1)}s` : "" });
     StatsStore.recordTurn(player.name, game.artistMode ? [r.titleRight] : [r.titleRight, r.artistRight], r.ms);
     if (!nextName) return renderFinal();
     if (lastTurn) { game.round += 1; game.turn = 0; } else { game.turn += 1; }
