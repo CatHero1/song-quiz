@@ -603,6 +603,14 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 .stat .num { font-family: var(--font-marquee); font-size: 26px; line-height: 1.1; font-variant-numeric: tabular-nums; color: var(--text); text-shadow: 2px 2px 0 var(--brand); }
 .stat .lbl { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .03em; }
 .seg .tile { padding: 9px 12px; font-size: 15px; }
+.best {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px; padding: 14px 16px; border-radius: 16px;
+  background: var(--gold-bg); border: var(--border-w) solid var(--gold-edge); box-shadow: 0 4px 0 var(--gold-deep);
+}
+.best .lbl { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--gold-text); }
+.best .num { grid-row: span 2; font-family: var(--font-marquee); font-size: 34px; line-height: 1; color: var(--text); font-variant-numeric: tabular-nums; }
+.best .num small { font-size: 16px; color: var(--muted); }
+.best .rec { font-size: 14px; font-weight: 600; color: var(--muted); }
 .dist { display: flex; flex-direction: column; gap: 6px; }
 .dist-row { display: grid; grid-template-columns: 34px 1fr 28px; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
 .dist-label { color: var(--muted); text-align: right; }
@@ -653,7 +661,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1242,8 +1250,8 @@ const Voice = (() => {
 const StatsStore = (() => {
   const KEY = "ntt-stats";
   const STEPS = 6;   // Heardle steps (1, 2, 4, 7, 11, 16 seconds)
-  const blankClassic = () => ({ games: 0, multiGames: 0, wins: 0, correct: 0, attempts: 0, streak: 0, bestStreak: 0, guessMs: 0, guesses: 0 });
-  const blankHeardle = () => ({ games: 0, multiGames: 0, wins: 0, songs: 0, solved: 0, artistOnly: 0, streak: 0, bestStreak: 0,
+  const blankClassic = () => ({ games: 0, multiGames: 0, wins: 0, bestScore: 0, correct: 0, attempts: 0, streak: 0, bestStreak: 0, guessMs: 0, guesses: 0 });
+  const blankHeardle = () => ({ games: 0, multiGames: 0, wins: 0, bestScore: 0, songs: 0, solved: 0, artistOnly: 0, streak: 0, bestStreak: 0,
                                 dist: Array(STEPS).fill(0), missed: 0 });
   const id = name => name.trim().toLowerCase();
 
@@ -1294,6 +1302,7 @@ const StatsStore = (() => {
       for (const p of players) {
         const s = entry(all, p.name)[mode === "heardle" ? "heardle" : "classic"];
         s.games++;
+        s.bestScore = Math.max(s.bestScore || 0, p.score || 0);
         if (players.length > 1) {
           s.multiGames++;
           if (winners.includes(p.name)) s.wins++;
@@ -3020,6 +3029,21 @@ function openStats(selected, confirming = "") {
     return `<p class="manage"><button class="link-btn" data-ask="reset">Reset stats</button> · <button class="link-btn" data-ask="delete">Delete player</button></p>`;
   }
 
+  // Highest game score for this mode, out of the most a game can give, plus the record on this device.
+  function bestCard(name) {
+    const mine = chosen[statsMode].bestScore || 0;
+    const max = statsMode === "heardle" ? Rules.rounds * HEARDLE_STEPS.length
+      : (Rules.rounds - 1) * Rules.pointsPerPart * 2 + Rules.pointsFor(Rules.rounds) * 2;
+    const holder = all.reduce((best, s) => ((s[statsMode].bestScore || 0) > (best ? best[statsMode].bestScore || 0 : 0) ? s : best), null);
+    const rec = holder && holder[statsMode].bestScore;
+    return `
+      <div class="best">
+        <span class="lbl">Highest score</span>
+        <span class="num">${mine ? `${mine}<small> / ${max}</small>` : "—"}</span>
+        <span class="rec">${!rec ? "No games finished yet" : holder.name === name ? "That's the record on this device" : `Record: ${esc(holder.name)} · ${rec}`}</span>
+      </div>`;
+  }
+
   statsDialog.innerHTML = `
     <div class="drawer-inner">
       <div class="drawer-head">
@@ -3032,6 +3056,7 @@ function openStats(selected, confirming = "") {
           <button class="tile" data-stats-mode="classic" aria-pressed="${statsMode === "classic"}">${icon("mic")}<span>Classic</span></button>
           <button class="tile" data-stats-mode="heardle" aria-pressed="${statsMode === "heardle"}">${icon("wave")}<span>Heardle</span></button>
         </div>
+        ${bestCard(chosen.name)}
         ${statsMode === "heardle" ? heardleView(chosen.heardle) : classicView(chosen.classic)}
         ${manage(chosen.name)}
         <p class="hint">Stats are saved on this device.</p>
