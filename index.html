@@ -180,8 +180,8 @@
 .h-rows li.h-empty { background: transparent; border-style: dashed; }
 .h-rows li.h-skip { color: var(--muted); }
 .h-rows li.h-wrong .ico { color: var(--wrong); }
-.h-rows li.h-artist { border-color: #e0a800; }
-.h-rows li.h-artist .ico { color: #e0a800; }
+.h-rows li.h-artist, .h-rows li.h-title { border-color: #e0a800; }
+.h-rows li.h-artist .ico, .h-rows li.h-title .ico { color: #e0a800; }
 .h-rows li.h-right { border-color: var(--right); background: color-mix(in srgb, var(--right) 15%, var(--card)); }
 .h-rows li.h-right .ico { color: var(--right); }
 .h-player { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -671,7 +671,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v25";
+const APP_VERSION = "v26";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -750,11 +750,21 @@ const SongSource = (() => {
     };
   }
 
-  // Same song twice (remasters, live versions) counts once.
+  // Versions that aren't the original recording. A clip is only used when the wanted song has the same marker.
+  const MARKERS = /\b(slowed|sped up|speed up|nightcore|reverb|karaoke|instrumental|8d|cover|covers|tribute|made famous|in the style of|lofi|lo fi|remix|live|acoustic|unplugged|demo|orchestral)\b/g;
+  // Of those, the ones that are never wanted in a game.
+  const ODD = new Set(["slowed", "sped up", "speed up", "nightcore", "reverb", "karaoke", "instrumental", "8d", "tribute", "made famous", "in the style of", "lofi", "lo fi"]);
+  const norm = s => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+    .replace(/&/g, " and ").replace(/['’`]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const markersIn = s => new Set(norm(s).match(MARKERS) || []);
+  const isOddVersion = (title, artist) => [...markersIn(title), ...markersIn(artist)].some(m => ODD.has(m));
+
+  // Same song twice (remasters, live versions) counts once; slowed, karaoke and similar versions are left out.
   function dedupe(songs) {
     const seen = new Set();
     return songs.filter(s => {
       if (!s || !s.title || !s.artist) return false;
+      if (isOddVersion(s.title, s.artist)) return false;
       const key = (s.title.replace(/\s[-–]\s.*$|\s*[([].*?[)\]]/g, "") + "|" + s.artist).toLowerCase().trim();
       if (seen.has(key)) return false;
       seen.add(key);
@@ -1042,14 +1052,36 @@ const SongSource = (() => {
   })();
   const libraries = { spotify, youtube };
 
-  // Libraries give song names; the playable clips come from Deezer.
-  const plainTitle = s => s.replace(/\s[-–]\s.*$/, "").replace(/\s*[([].*?[)\]]/g, "").trim();
-  const sameName = (a, b) => { const x = a.toLowerCase(), y = b.toLowerCase(); return x.includes(y) || y.includes(x); };
+  // Libraries give song names; the playable clips come from Deezer. Deezer search also returns slowed
+  // edits, covers and tribute acts, so a result must be the same song by the same artist, with no version
+  // marker the wanted song doesn't have. The same version beats others, exact artist and title beat partial ones,
+  // then the most played wins.
+  const plainTitle = s => s.replace(/\s[-–]\s.*$/, "").replace(/\s*[([].*?[)\]]/g, "").replace(/\b(feat|ft|featuring)\b.*$/i, "").trim();
+  const baseTitle = s => norm(plainTitle(s)).replace(/^the /, "");
+  const baseArtist = s => norm(s).replace(/^the /, "");
+  function bestMatch(results, t) {
+    const wantMarkers = markersIn(t.title + " " + t.artist);
+    const title = baseTitle(t.title), artist = baseArtist(t.artist);
+    let best = null, bestScore = -1;
+    for (const d of results || []) {
+      if (!d || !d.preview || !d.artist) continue;
+      const dTitle = baseTitle(d.title || ""), dArtist = baseArtist(d.artist.name || "");
+      const dMarkers = markersIn((d.title || "") + " " + d.artist.name);
+      if (![...dMarkers].every(m => wantMarkers.has(m))) continue;
+      const sameVersion = dMarkers.size === wantMarkers.size;   // e.g. your song is a remix and so is this one
+      const exactArtist = dArtist === artist;
+      if (!exactArtist && !(dArtist.includes(artist) || artist.includes(dArtist))) continue;
+      const exactTitle = dTitle === title;
+      if (!exactTitle && !(dTitle && (dTitle.includes(title) || title.includes(dTitle)))) continue;
+      const score = (sameVersion ? 4e9 : 0) + (exactArtist ? 2e9 : 0) + (exactTitle ? 1e9 : 0) + Math.min(d.rank || 0, 9.9e8);
+      if (score > bestScore) { bestScore = score; best = d; }
+    }
+    return best;
+  }
   async function matchOnDeezer(t) {
-    const pick = res => (res.data || []).find(d => d.preview && d.artist && sameName(d.artist.name, t.artist));
     const title = plainTitle(t.title);
-    const hit = pick(await jsonp("/search", { q: `artist:"${t.artist}" track:"${title}"`, limit: 5 }))
-      || pick(await jsonp("/search", { q: `${t.artist} ${title}`, limit: 5 }));
+    const hit = bestMatch((await jsonp("/search", { q: `artist:"${t.artist}" track:"${title}"`, limit: 15 })).data, t)
+      || bestMatch((await jsonp("/search", { q: `${t.artist} ${title}`, limit: 15 })).data, t);
     return hit ? { song: normalize(hit), rank: hit.rank || 0 } : null;
   }
 
@@ -1206,7 +1238,9 @@ const Matcher = (() => {
     return clean(a.title) === clean(b.title) && sameArtist(a.artist, b.artist);
   }
 
-  return { checkBoth, sameSong, sameArtist };
+  const sameTitle = (a, b) => Boolean(clean(a)) && clean(a) === clean(b);
+
+  return { checkBoth, sameSong, sameArtist, sameTitle };
 })();
 
 /* ============================================================
@@ -2632,7 +2666,7 @@ function showResult(song, r) {
 // Naming the right artist (or a wrong song by the right artist) locks in half that step's points, rounded up;
 // the turn scores whichever is higher, the song or the artist.
 const HEARDLE_STEPS = [1, 2, 4, 7, 11, 16];
-const HEARDLE_SQUARES = { skip: "⬛", wrong: "🟥", artist: "🟨", right: "🟩", empty: "⬜" };
+const HEARDLE_SQUARES = { skip: "⬛", wrong: "🟥", artist: "🟨", title: "🟨", right: "🟩", empty: "⬜" };
 
 function renderHeardleTurn() {
   stopClip();
@@ -2642,7 +2676,8 @@ function renderHeardleTurn() {
   const tries = HEARDLE_STEPS.length, MAX = HEARDLE_STEPS[tries - 1], FULL = 30;
   const rows = [];            // { kind: "skip" | "wrong" | "artist" | "right", text }
   let step = 0, done = false, chosen = null, results = [], active = -1, searchTimer = 0, ticket = 0;
-  let artistPts = 0;         // locked in when they first name the right artist
+  let artistPts = 0;         // half credit, locked in the first time they get the artist or the song name right
+  let halfWhat = "";         // "the artist" or "the song name", for the result text
 
   app.innerHTML = `
     ${topbar({ right: `<span class="round-pill">Round ${game.round}/${Rules.rounds}</span>`, version: false, theme: false, stats: false })}
@@ -2707,7 +2742,7 @@ function renderHeardleTurn() {
       const r = rows[i];
       if (!r) return `<li class="h-empty"></li>`;
       if (r.kind === "skip") return `<li class="h-skip">${icon("skip")}<span class="h-t">Skipped</span></li>`;
-      const tag = r.kind === "artist" ? `<small>Right artist</small>` : "";
+      const tag = r.kind === "artist" ? `<small>Right artist</small>` : r.kind === "title" ? `<small>Right song name</small>` : "";
       return `<li class="h-${r.kind}">${icon(r.kind === "right" ? "check" : "cross")}<span class="h-t">${esc(r.text)}</span>${tag}</li>`;
     }).join("");
   }
@@ -2843,10 +2878,10 @@ function renderHeardleTurn() {
     input.value = "";
     submitBtn.disabled = true;
     closeList();
-    const creditArtist = () => { if (!artistPts) artistPts = Math.ceil((tries - step) / 2); };
+    const credit = what => { if (!artistPts) { artistPts = Math.ceil((tries - step) / 2); halfWhat = what; } };
     if (pick.kind === "artist") {
       const right = Matcher.sameArtist(pick.name, song.artist);
-      if (right) creditArtist();
+      if (right) credit("the artist");
       rows.push({ kind: right ? "artist" : "wrong", text: right ? pick.name : `${pick.name} (artist)` });
       return nextStep();
     }
@@ -2856,8 +2891,11 @@ function renderHeardleTurn() {
       return finish(true);
     }
     const artistOnly = !game.artistMode && Matcher.sameArtist(pick.artist, song.artist);
-    if (artistOnly) creditArtist();
-    rows.push({ kind: artistOnly ? "artist" : "wrong", text: `${pick.title} – ${pick.artist}` });
+    // Same song name by another artist (a cover, or a different song with that title).
+    const titleOnly = !artistOnly && Matcher.sameTitle(pick.title, song.title);
+    if (artistOnly) credit("the artist");
+    if (titleOnly) credit("the song name");
+    rows.push({ kind: artistOnly ? "artist" : titleOnly ? "title" : "wrong", text: `${pick.title} – ${pick.artist}` });
     nextStep();
   }
 
@@ -2870,8 +2908,8 @@ function renderHeardleTurn() {
     const before = player.score;
     player.score += points;
     StatsStore.recordHeardle(player.name, { won, step, artist: artistPts > 0 });
-    game.history.push({ round: game.round, player: game.turn, song, points, title: won, artist: game.artistMode ? null : won || artistPts > 0,
-                        note: won ? `Solved at ${HEARDLE_STEPS[step]}s` : artistPts ? "Got the artist" : "Missed" });
+    game.history.push({ round: game.round, player: game.turn, song, points, title: won, artist: game.artistMode ? null : won || halfWhat === "the artist",
+                        note: won ? `Solved at ${HEARDLE_STEPS[step]}s` : artistPts ? `Got ${halfWhat}` : "Missed" });
     document.getElementById("h-guess").hidden = true;
     drawPlayer();
     if (won) Sfx.right();
@@ -2882,7 +2920,7 @@ function renderHeardleTurn() {
     if (points) later(() => rollScore(game.turn, before, player.score), 350);
 
     const squares = Array.from({ length: tries }, (_, i) => HEARDLE_SQUARES[rows[i] ? rows[i].kind : "empty"]).join("");
-    const shareText = `Song Quiz · Heardle\n🔊${squares}\n${won ? `Got it in ${HEARDLE_STEPS[step]}s` : artistOnlyWin ? "Got the artist" : "Didn't get it"}\ncathero1.github.io/song-quiz`;
+    const shareText = `Song Quiz · Heardle\n🔊${squares}\n${won ? `Got it in ${HEARDLE_STEPS[step]}s` : artistOnlyWin ? `Got ${halfWhat}` : "Didn't get it"}\ncathero1.github.io/song-quiz`;
     const lastTurn = game.turn === game.players.length - 1;
     const nextName = lastTurn ? (game.round === Rules.rounds ? null : game.players[0].name) : game.players[game.turn + 1].name;
     // This turn is scored, so a reload should continue at the next one.
@@ -2894,7 +2932,7 @@ function renderHeardleTurn() {
     box.innerHTML = `
       <div class="earned ${points ? "" : "zero"}">${points ? `+${points} for ${esc(player.name)}` : "Not this time"}</div>
       ${won ? `<p class="guess-time">Got it in ${HEARDLE_STEPS[step]} second${HEARDLE_STEPS[step] === 1 ? "" : "s"}</p>`
-        : artistOnlyWin ? `<p class="guess-time">Got the artist</p>` : ""}
+        : artistOnlyWin ? `<p class="guess-time">Got ${halfWhat}</p>` : ""}
       <div class="song">
         ${song.cover ? `<img src="${esc(song.cover)}" alt="" width="80" height="80">` : ""}
         <div class="meta">
@@ -3079,14 +3117,14 @@ function openStats(selected, confirming = "") {
         ${stat(pct(h.solved, h.songs), "Songs solved")}
         ${stat(h.streak, "Current streak")}
         ${stat(h.bestStreak, "Best streak")}
-        ${stat(h.artistOnly, "Artist only")}
+        ${stat(h.artistOnly, "Half right")}
       </div>
       <div class="dist" aria-label="Songs solved at each clip length">
         <span class="section-title">Solved at</span>
         ${HEARDLE_STEPS.map((sec, i) => bar(`${sec}s`, h.dist[i])).join("")}
         ${bar("✗", h.missed, true)}
       </div>
-      <p class="hint">Streaks count songs solved in a row. "Artist only" counts songs where you got the artist but not the song.</p>`;
+      <p class="hint">Streaks count songs solved in a row. "Half right" counts songs where you got the artist or the song name, but not both.</p>`;
   }
   function manage(name) {
     if (confirming === "reset") return `
