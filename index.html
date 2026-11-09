@@ -346,7 +346,26 @@ svg.ico { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-wi
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand.home { flex-direction: column; align-items: flex-start; gap: 6px; }
 .logo { white-space: nowrap; }
-.ver { padding: 2px 8px; border-radius: 999px; background: var(--card); border: var(--border-w) solid var(--edge); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; flex: none; }
+.ver { padding: 2px 8px; border-radius: 999px; background: var(--card); border: var(--border-w) solid var(--edge); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; flex: none; cursor: pointer; }
+.ver:hover, .ver[aria-expanded="true"] { color: var(--text); border-color: var(--brand); }
+.ver-wrap { position: relative; flex: none; }
+.notes-pop {
+  position: absolute; left: 0; top: calc(100% + 8px); z-index: 30; width: min(320px, calc(100vw - 32px)); max-height: min(60vh, 460px);
+  overflow-y: auto; overscroll-behavior: contain; padding: 14px 16px; border-radius: 18px;
+  background: var(--card); border: var(--border-w) solid var(--edge); box-shadow: 0 6px 0 var(--edge-deep), 0 18px 40px rgba(0,0,0,.18);
+  transform-origin: 12px -8px; animation: notes-open .22s cubic-bezier(.2, .9, .3, 1.2);
+}
+@keyframes notes-open { from { transform: scale(.4); opacity: 0; } to { transform: none; opacity: 1; } }
+.notes-pop .section-title { margin-bottom: 8px; }
+.notes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.notes > li { padding: 10px 0; border-top: 1px solid var(--edge); }
+.notes > li:first-child { border-top: 0; padding-top: 2px; }
+.notes-head { display: flex; align-items: baseline; gap: 8px; }
+.notes-head b { font-family: var(--font-marquee); font-weight: 400; font-size: 16px; }
+.notes-head span { color: var(--muted); font-size: 13px; font-weight: 600; }
+.notes-head em { margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--brand); color: var(--on-brand); font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
+.notes ul { margin: 4px 0 0; padding-left: 18px; color: var(--text); font-size: 14px; line-height: 1.4; }
+.notes ul li + li { margin-top: 2px; }
 .logo.home { font-size: clamp(38px, 11vw, 60px); padding-top: 6px; text-shadow: 4px 4px 0 var(--brand); }
 .small-btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 14px;
@@ -670,8 +689,40 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 <script>
 "use strict";
 
-// Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v27";
+// Patch notes, newest first. Add an entry with every update that goes live; the version badge shows the top one.
+const PATCH_NOTES = [
+  { v: "v28", date: "Nov 9", notes: ["Patch notes: tap the version badge to see what changed in each update"] },
+  { v: "v27", date: "Nov 8", notes: ["Heardle: getting half of it right (artist or song name) is a flat 1 point"] },
+  { v: "v26", date: "Nov 8", notes: ["Spotify and YouTube Music songs play the original version, not slowed, sped-up, cover or karaoke ones",
+                                     "Heardle: \u201cRight song name\u201d hint when you pick the right song by the wrong artist"] },
+  { v: "v25", date: "Nov 8", notes: ["Guess times in the Classic recap", "\u201c4s\u201d no longer shows as \u201c4S\u201d"] },
+  { v: "v24", date: "Nov 8", notes: ["Continue your game after the page reloads"] },
+  { v: "v23", date: "Nov 8", notes: ["Highest score for each mode in Stats, with the record on this device"] },
+  { v: "v22", date: "Nov 8", notes: ["Game recap on the final screen: every song, what you got right and the points",
+                                     "The song waits until the screen has loaded"] },
+  { v: "v21", date: "Nov 8", notes: ["The song starts right as the countdown\u2019s \u201c1\u201d ends"] },
+  { v: "v20", date: "Nov 8", notes: ["Separate Heardle stats with a \u201csolved at\u201d chart", "Reset or delete a player\u2019s stats"] },
+  { v: "v19", date: "Nov 8", notes: ["Heardle: skip button next to play, Skip song, and guessing just the artist"] },
+  { v: "v18", date: "Nov 8", notes: ["Centered 3-2-1 countdown, with the song starting right after it"] },
+  { v: "v17", date: "Nov 8", notes: ["New Heardle mode: start with 1 second and unlock more with each skip or wrong guess"] },
+  { v: "v16", date: "Nov 7", notes: ["Volume slider for the clip", "3-2-1 countdown before the game starts"] },
+  { v: "v15", date: "Nov 7", notes: ["Roomier top bar on the home and final screens", "\u201cGuessed in 2.1s\u201d after each answer"] },
+  { v: "v13", date: "Nov 7", notes: ["\u201cWell-known songs only\u201d switch for Spotify and YouTube Music"] },
+  { v: "v12", date: "Nov 7", notes: ["Small playlists work: only one song needed per turn"] },
+  { v: "v11", date: "Nov 7", notes: ["No ticking over the end of the clip"] },
+  { v: "v10", date: "Nov 7", notes: ["15 seconds to answer after each clip", "Next turn starts on its own with 3-2-1 chimes",
+                                     "Screen stays on during a game"] },
+  { v: "v9",  date: "Nov 7", notes: ["Cleaner top bar during a game", "Replays can\u2019t be used up by tapping mid-clip"] },
+  { v: "v8",  date: "Nov 6", notes: ["\u201cCount song\u201d and \u201cCount artist\u201d when the mic mishears you"] },
+  { v: "v7",  date: "Nov 6", notes: ["Smarter voice matching for names that sound alike (Sophia and Sofia)"] },
+  { v: "v6",  date: "Nov 6", notes: ["YouTube Music liked songs and playlists"] },
+  { v: "v5",  date: "Nov 6", notes: ["Spotify Liked Songs and playlists"] },
+  { v: "v4",  date: "Nov 6", notes: ["The answer is read out loud after a miss"] },
+  { v: "v3",  date: "Nov 6", notes: ["Category rows with covers, plus an artist picker with search"] },
+  { v: "v2",  date: "Nov 6", notes: ["Voice-first turns with sound effects, Play again and Skip", "Scores roll up at the top"] },
+  { v: "v1",  date: "Nov 6", notes: ["Song Quiz goes online, with six themes and player stats"] },
+];
+const APP_VERSION = PATCH_NOTES[0].v;
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -1698,7 +1749,18 @@ const topbar = ({ right = "", home = false, version = true, theme = true, stats 
   <header class="topbar ${home ? "home" : ""}">
     <div class="brand ${home ? "home" : ""}">
       ${home ? `<h1 class="marquee-text logo home">Song Quiz</h1>` : `<span class="marquee-text logo">Song Quiz</span>`}
-      ${version ? `<span class="ver" title="Version">${APP_VERSION}</span>` : ""}
+      ${version ? `
+        <div class="ver-wrap" id="ver-wrap">
+          <button class="ver" id="ver-btn" aria-expanded="false" aria-controls="patch-notes" title="Patch notes">${APP_VERSION}</button>
+          <div class="notes-pop" id="patch-notes" role="dialog" aria-label="Patch notes" hidden>
+            <h2 class="section-title">Patch notes</h2>
+            <ol class="notes">${PATCH_NOTES.map((n, i) => `
+              <li>
+                <div class="notes-head"><b>${n.v}</b><span>${n.date}</span>${i === 0 ? `<em>New</em>` : ""}</div>
+                <ul>${n.notes.map(t => `<li>${esc(t)}</li>`).join("")}</ul>
+              </li>`).join("")}</ol>
+          </div>
+        </div>` : ""}
     </div>
     <div class="tools">
       ${right}
@@ -1721,6 +1783,13 @@ const topbar = ({ right = "", home = false, version = true, theme = true, stats 
 
 function wireTopbar() {
   app.querySelectorAll("[data-open-stats]").forEach(b => b.onclick = () => openStats());
+  const verBtn = document.getElementById("ver-btn");
+  if (verBtn) verBtn.onclick = () => {
+    const pop = document.getElementById("patch-notes");
+    pop.hidden = !pop.hidden;
+    verBtn.setAttribute("aria-expanded", String(!pop.hidden));
+    if (!pop.hidden) pop.scrollTop = 0;
+  };
   const menu = document.getElementById("theme-menu");
   const btn = document.getElementById("theme-btn");
   if (!menu) return;
@@ -1737,7 +1806,20 @@ function wireTopbar() {
   });
 }
 
-// Close the theme menu on an outside tap or Escape.
+// Close the theme menu and patch notes on an outside tap or Escape.
+function closeNotes(focusBadge = false) {
+  const pop = document.getElementById("patch-notes");
+  if (!pop || pop.hidden) return false;
+  pop.hidden = true;
+  document.getElementById("ver-btn").setAttribute("aria-expanded", "false");
+  if (focusBadge) document.getElementById("ver-btn").focus();
+  return true;
+}
+document.addEventListener("click", e => {
+  const wrap = document.getElementById("ver-wrap");
+  if (wrap && !wrap.contains(e.target)) closeNotes();
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeNotes(true); });
 document.addEventListener("click", e => {
   const menu = document.getElementById("theme-menu");
   if (menu && menu.classList.contains("open") && !menu.contains(e.target)) {
