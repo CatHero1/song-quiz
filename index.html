@@ -671,7 +671,7 @@ dialog.drawer::backdrop { background: var(--scrim); backdrop-filter: blur(3px); 
 "use strict";
 
 // Bump this with every update that goes live, so it's easy to tell which version is loaded.
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 
 /* ============================================================
    SONG SOURCE — the only part of the app that knows where songs
@@ -2663,8 +2663,8 @@ function showResult(song, r) {
 
 /* ---------- Heardle mode ---------- */
 // Same steps as Heardle: 1, 2, 4, 7, 11 and 16 seconds. Solving on the first step is worth 6 points, the last 1.
-// Naming the right artist (or a wrong song by the right artist) locks in half that step's points, rounded up;
-// the turn scores whichever is higher, the song or the artist.
+// Getting half of it right (the artist, or the song name by the wrong artist) locks in a flat 1 point;
+// the turn scores whichever is higher, the song or that point.
 const HEARDLE_STEPS = [1, 2, 4, 7, 11, 16];
 const HEARDLE_SQUARES = { skip: "⬛", wrong: "🟥", artist: "🟨", title: "🟨", right: "🟩", empty: "⬜" };
 
@@ -2676,7 +2676,7 @@ function renderHeardleTurn() {
   const tries = HEARDLE_STEPS.length, MAX = HEARDLE_STEPS[tries - 1], FULL = 30;
   const rows = [];            // { kind: "skip" | "wrong" | "artist" | "right", text }
   let step = 0, done = false, chosen = null, results = [], active = -1, searchTimer = 0, ticket = 0;
-  let artistPts = 0;         // half credit, locked in the first time they get the artist or the song name right
+  let artistPts = 0;         // 1 point, locked in the first time they get the artist or the song name right
   let halfWhat = "";         // "the artist" or "the song name", for the result text
 
   app.innerHTML = `
@@ -2878,7 +2878,7 @@ function renderHeardleTurn() {
     input.value = "";
     submitBtn.disabled = true;
     closeList();
-    const credit = what => { if (!artistPts) { artistPts = Math.ceil((tries - step) / 2); halfWhat = what; } };
+    const credit = what => { if (!artistPts) { artistPts = 1; halfWhat = what; } };
     if (pick.kind === "artist") {
       const right = Matcher.sameArtist(pick.name, song.artist);
       if (right) credit("the artist");
